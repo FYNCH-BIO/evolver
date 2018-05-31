@@ -5,7 +5,6 @@ from six.moves.urllib.parse import urlparse as parse_url
 
 from .symmetries import decode_string, encode_string, get_byte, get_character
 
-
 EngineIOSession = namedtuple('EngineIOSession', [
     'id', 'ping_interval', 'ping_timeout', 'transport_upgrades'])
 SocketIOData = namedtuple('SocketIOData', ['path', 'ack_id', 'args'])
@@ -121,22 +120,37 @@ def _make_packet_prefix(packet):
 
 
 def _read_packet_length(content, content_index):
-    while get_byte(content, content_index) != 0:
+    try:
+        content = content.decode()
+        start = content_index
+        while content[content_index] != ':':
+            content_index += 1
+        packet_length_string = content[start:content_index]
+        return content_index, int(packet_length_string)
+    except:
+        while get_byte(content, content_index) != 0:
+            content_index += 1
         content_index += 1
-    content_index += 1
-    packet_length_string = ''
-    byte = get_byte(content, content_index)
-    while byte != 255 and byte != ':':
-        packet_length_string += str(byte)
-        content_index += 1
+        packet_length_string = ''
         byte = get_byte(content, content_index)
-    return content_index, int(packet_length_string)
+        while byte != 255 and byte != ':':
+            packet_length_string += str(byte)
+            content_index += 1
+            byte = get_byte(content, content_index)
+        return content_index, int(packet_length_string)
 
 
 def _read_packet_text(content, content_index, packet_length):
-    byte = get_byte(content, content_index)
-    while byte == 255 or byte == ':':
-        content_index += 1
+    try:
+        content = content.decode()
+        while content[content_index] == ':':
+            content_index += 1
+        packet_text = content[content_index:content_index + packet_length]
+        return content_index + packet_length, packet_text.encode()
+    except:
         byte = get_byte(content, content_index)
-    packet_text = content[content_index:content_index + packet_length]
-    return content_index + packet_length, packet_text
+        while byte == 255 or byte == ':':
+            content_index += 1
+            byte = get_byte(content, content_index)
+        packet_text = content[content_index:content_index + packet_length]
+        return content_index + packet_length, packet_text
