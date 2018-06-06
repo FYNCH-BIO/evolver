@@ -1,5 +1,3 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
 from socketIO_client import SocketIO, BaseNamespace
 import time
 from threading import Thread
@@ -32,6 +30,7 @@ def start_background_loop(loop):
     asyncio.set_event_loop(loop)
     loop.run_forever()
 
+
 def parse_command(data):
     if not data['cmd']:
         print('No command found')
@@ -53,8 +52,8 @@ if __name__ == '__main__':
     # Create a new loop
     new_loop = asyncio.new_event_loop()
     # Assign the loop to another thread
-    t = Thread(target=start_background_loop, args=(new_loop, ))
+    t = Thread(target=start_background_loop, args=(new_loop,))
     # Start socket
-    socketIO = SocketIO('127.0.0.1', 8080)
-    evolver_namespace = socketIO.define(EvolverNamespace, '/evolver')
+    socketIO = SocketIO('127.0.0.1', 9000)
+    evolver_namespace = socketIO.define(EvolverNamespace, '/evolver-cloud')
     socketIO.wait()
