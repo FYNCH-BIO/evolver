@@ -3,17 +3,27 @@ import time
 from threading import Thread
 import asyncio
 import blink
+import random
+
+cloud_namespace = None
+dpu_namespace = None
+STATE = {'running': False}
 
 
-class EvolverNamespace(BaseNamespace):
+class CloudNamespace(BaseNamespace):
 
     def on_connect(self, *args):
+        self.emit('data')
         print('connected cloud')
 
     def on_disconnect(self, *args):
         print('disconnected cloud')
 
     def on_reconnect(self, *args):
+        print('reconnect cloud')
+
+    def on_experiment(self, data):
+        dpu_namespace.emit('experiment', {'id': data['id'], 'alg': data['alg']})
         print('reconnect cloud')
 
     def on_command(self, *args):
@@ -37,15 +47,26 @@ class DpuNamespace(BaseNamespace):
     def on_reconnect(self, *args):
         print('reconnect dpu')
 
-    def on_command(self, *args):
-        print('on_evolver_command', args)
-        try:
-            to_emit = parse_command(args[0])
-            if to_emit:
-                self.emit('data', {'data': 'test'})
-        except TypeError:
-            print('Command payload not valid')
+    def on_status(self, data):
+        if data['status'] == 1:
+            print('DPU sent start command')
+            STATE['running'] = True
+            # TODO blink
+            task_loop.call_soon_threadsafe(emit_thread, self)
+        else:
+            print('DPU not ready')
+        print('status dpu')
 
+    def on_command(self, data):
+        print('on_dpu_command', data)
+        parse_command(data)
+
+
+def emit_thread(socket):
+    print(STATE)
+    while STATE['running']:
+        socket.emit('data', {'id': 1, 'data': {'temp': random.random()}})
+        time.sleep(1)
 
 def start_task_loop(loop):
     asyncio.set_event_loop(loop)
@@ -63,8 +84,9 @@ def parse_command(data):
         task_loop.call_soon_threadsafe(blink.run)
         return 1
     elif data['cmd'] == 'stop':
-        time.sleep(3)
-        blink.stop()
+        # time.sleep(3)
+        #blink.stop()
+        STATE['running'] = False
         return 0
 
 
@@ -78,12 +100,12 @@ if __name__ == '__main__':
         # Create a new loop
         task_loop = asyncio.new_event_loop()
         # Assign the loop to another thread
+        # This is what all evolver commands will run in so we don't block the main thread with a while True loop
         t = Thread(target=start_task_loop, args=(task_loop,))
-        # t.daemon = True
-        # t.start()
+        t.start()
 
         socketIO_cloud = SocketIO('127.0.0.1', 9000)
-        cloud_namespace = socketIO_cloud.define(EvolverNamespace, '/evolver-cloud')
+        cloud_namespace = socketIO_cloud.define(CloudNamespace, '/evolver-cloud')
 
         socketIO_dpu = SocketIO('127.0.0.1', 8081)
         dpu_namespace = socketIO_dpu.define(DpuNamespace, '/evolver-dpu')
