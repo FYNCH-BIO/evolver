@@ -2,7 +2,7 @@ from socketIO_client import SocketIO, BaseNamespace
 import time
 from threading import Thread
 import asyncio
-import blink
+# import blink
 import random
 
 cloud_namespace = None
@@ -26,15 +26,30 @@ class CloudNamespace(BaseNamespace):
         dpu_namespace.emit('experiment', {'id': data['id'], 'alg': data['alg']})
         print('reconnect cloud')
 
-    def on_command(self, *args):
-        print('on_evolver_command', args)
-        try:
-            to_emit = parse_command(args[0])
-            if to_emit:
-                self.emit('data', {'data': 'test'})
-        except TypeError:
-            print('Command payload not valid')
+    # def on_command(self, *args):
+    #     print('on_evolver_command', args)
+    #     try:
+    #         to_emit = parse_command(args[0])
+    #         if to_emit:
+    #             self.emit('data', {'data': 'test'})
+    #     except TypeError:
+    #         print('Command payload not valid')
 
+    def on_start(self, *args):
+        print("started")
+
+    def on_stop(self, *args):
+        print("stopped")
+
+    def on_pause(self, *args):
+        print("paused")
+
+    def on_create(self, *args):
+        print(args)
+        print("created")
+
+    def on_update(self, *args):
+        print("updated")
 
 class DpuNamespace(BaseNamespace):
 
@@ -81,7 +96,7 @@ def parse_command(data):
     print(data['cmd'])
     if data['cmd'] == 'start':
         t.start()
-        task_loop.call_soon_threadsafe(blink.run)
+        # task_loop.call_soon_threadsafe(blink.run)
         return 1
     elif data['cmd'] == 'stop':
         # time.sleep(3)
