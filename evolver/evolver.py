@@ -26,15 +26,6 @@ class CloudNamespace(BaseNamespace):
         dpu_namespace.emit('experiment', {'id': data['id'], 'alg': data['alg']})
         print('reconnect cloud')
 
-    # def on_command(self, *args):
-    #     print('on_evolver_command', args)
-    #     try:
-    #         to_emit = parse_command(args[0])
-    #         if to_emit:
-    #             self.emit('data', {'data': 'test'})
-    #     except TypeError:
-    #         print('Command payload not valid')
-
     def on_start(self, *args):
         print("started")
 
