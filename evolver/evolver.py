@@ -9,7 +9,6 @@ import yaml
 cloud_namespace = None
 dpu_namespace = None
 STATE = {'running': False}
-#FLAGS = None
 
 
 class CloudNamespace(BaseNamespace):
