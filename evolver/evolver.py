@@ -9,6 +9,7 @@ import yaml
 cloud_namespace = None
 dpu_namespace = None
 STATE = {'running': False}
+#FLAGS = None
 
 
 class CloudNamespace(BaseNamespace):
@@ -97,8 +98,10 @@ def start_dpu_thread(socket):
 
 if __name__ == '__main__':
 
-    with open('../conf.yml', 'r') as ymlfile:
-        conf = yaml.load(ymfile)
+    FLAGS = lambda: None
+
+    with open('conf.yml', 'r') as ymlfile:
+        conf = yaml.load(ymlfile)
         for element in conf:
             setattr(FLAGS, element, conf[element])
 
