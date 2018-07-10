@@ -2,5 +2,3 @@ cloud_ip: 127.0.0.1
 cloud_port: 9000
 dpu_ip: 127.0.0.1
 dpu_port: 8081
-host_ip: 127.0.0.1
-host_port: 8000

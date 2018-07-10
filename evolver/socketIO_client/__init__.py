@@ -1,5 +1,5 @@
 import atexit
-import yaml
+
 
 from .exceptions import ConnectionError, TimeoutError, PacketError
 from .heartbeats import HeartbeatThread
@@ -20,9 +20,6 @@ __all__ = 'SocketIO', 'SocketIONamespace'
 __version__ = '0.7.2'
 BaseNamespace = SocketIONamespace
 LoggingNamespace = LoggingSocketIONamespace
-
-with open('../conf.yml', 'r') as ymlfile:
-    cfg = yaml.load(ymlfile)
 
 def retry(f):
     def wrap(*args, **kw):
@@ -345,7 +342,7 @@ class SocketIO(EngineIO):
     """
 
     def __init__(
-            self, host=cfg['host_ip'], port=None, Namespace=SocketIONamespace,
+            self, host='127.0.0.1', port=None, Namespace=SocketIONamespace,
             wait_for_connection=True, transports=TRANSPORTS,
             resource='socket.io', hurry_interval_in_seconds=1, **kw):
         self._namespace_by_path = {}

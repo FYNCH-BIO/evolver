@@ -10,6 +10,7 @@ cloud_namespace = None
 dpu_namespace = None
 STATE = {'running': False}
 
+
 class CloudNamespace(BaseNamespace):
 
     def on_connect(self, *args):
@@ -95,8 +96,11 @@ def start_dpu_thread(socket):
 
 
 if __name__ == '__main__':
-    with open('conf.yml', 'r') as ymlfile:
-        cfg = yaml.load(ymlfile)
+
+    with open('../conf.yml', 'r') as ymlfile:
+        conf = yaml.load(ymfile)
+        for element in conf:
+            setattr(FLAGS, element, conf[element])
 
     try:
         print('Connecting to Evolver and DPU')
@@ -107,10 +111,10 @@ if __name__ == '__main__':
         t = Thread(target=start_task_loop, args=(task_loop,))
         t.start()
 
-        socketIO_cloud = SocketIO(cfg['cloud_ip'], cfg['cloud_port'])
+        socketIO_cloud = SocketIO(FLAGS.cloud_ip, FLAGS.cloud_port)
         cloud_namespace = socketIO_cloud.define(CloudNamespace, '/evolver-cloud')
 
-        socketIO_dpu = SocketIO(cfg['dpu_ip'], cfg['dpu_port'])
+        socketIO_dpu = SocketIO(FLAGS.dpu_ip, FLAGS.dpu_port)
         dpu_namespace = socketIO_dpu.define(DpuNamespace, '/evolver-dpu')
 
         t2 = Thread(target=start_dpu_thread, args=(socketIO_dpu,))
