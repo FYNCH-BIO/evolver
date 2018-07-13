@@ -4,6 +4,7 @@ from threading import Thread
 import asyncio
 # import blink
 import random
+import yaml
 
 cloud_namespace = None
 dpu_namespace = None
@@ -101,6 +102,14 @@ def start_dpu_thread(socket):
 
 
 if __name__ == '__main__':
+
+    FLAGS = lambda: None
+
+    with open('conf.yml', 'r') as ymlfile:
+        conf = yaml.load(ymlfile)
+        for element in conf:
+            setattr(FLAGS, element, conf[element])
+
     try:
         print('Connecting to Evolver and DPU')
         # Create a new loop
@@ -110,10 +119,10 @@ if __name__ == '__main__':
         t = Thread(target=start_task_loop, args=(task_loop,))
         t.start()
 
-        socketIO_cloud = SocketIO('127.0.0.1', 9000)
+        socketIO_cloud = SocketIO(FLAGS.cloud_ip, FLAGS.cloud_port)
         cloud_namespace = socketIO_cloud.define(CloudNamespace, '/evolver-cloud')
 
-        socketIO_dpu = SocketIO('127.0.0.1', 8081)
+        socketIO_dpu = SocketIO(FLAGS.dpu_ip, FLAGS.dpu_port)
         dpu_namespace = socketIO_dpu.define(DpuNamespace, '/evolver-dpu')
 
         t2 = Thread(target=start_dpu_thread, args=(socketIO_dpu,))

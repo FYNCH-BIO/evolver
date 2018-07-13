@@ -1,5 +1,6 @@
 import atexit
 
+
 from .exceptions import ConnectionError, TimeoutError, PacketError
 from .heartbeats import HeartbeatThread
 from .logs import LoggingMixin
@@ -19,7 +20,6 @@ __all__ = 'SocketIO', 'SocketIONamespace'
 __version__ = '0.7.2'
 BaseNamespace = SocketIONamespace
 LoggingNamespace = LoggingSocketIONamespace
-
 
 def retry(f):
     def wrap(*args, **kw):
