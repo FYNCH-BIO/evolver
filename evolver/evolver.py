@@ -23,7 +23,7 @@ class CloudNamespace(BaseNamespace):
         print('reconnect cloud')
 
     def on_experiment(self, data):
-        dpu_namespace.emit('experiment', {'id': data['id'], 'alg': data['alg']})
+        dpu_namespace.emit('experiment', {'id': data['id'], 'alg': data['alg'], 'config': data['config'], 'device': data['device']})
         print('reconnect cloud')
 
     def on_start(self, *args):
@@ -58,7 +58,7 @@ class DpuNamespace(BaseNamespace):
             print('DPU sent start command')
             STATE['running'] = True
             # TODO blink
-            task_loop.call_soon_threadsafe(emit_thread, self)
+            task_loop.call_soon_threadsafe(emit_thread, self, data['id'])
         else:
             print('DPU not ready')
         print('status dpu')
@@ -68,10 +68,10 @@ class DpuNamespace(BaseNamespace):
         parse_command(data)
 
 
-def emit_thread(socket):
+def emit_thread(socket, exp_id):
     print(STATE)
     while STATE['running']:
-        socket.emit('data', {'id': 1, 'data': {'temp': random.random()}})
+        socket.emit('data', {'id': exp_id, 'data': {'temp': random.random()}})
         time.sleep(1)
 
 def start_task_loop(loop):
