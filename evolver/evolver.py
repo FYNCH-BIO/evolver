@@ -1,6 +1,7 @@
 from socketIO_client import SocketIO, BaseNamespace
 import time
-from threading import Thread
+from threading import Thread, Event
+# import threading
 import asyncio
 # import blink
 import random
@@ -27,13 +28,16 @@ class CloudNamespace(BaseNamespace):
         dpu_namespace.emit('experiment', {'id': data['id'], 'alg': data['alg'], 'config': data['config'], 'device': data['device']})
         print('reconnect cloud')
 
-    def on_start(self, *args):
+    def on_start(self, data):
+        dpu_namespace.emit('start', {'id': data['id']})
         print("started")
 
-    def on_stop(self, *args):
+    def on_stop(self, data):
+        dpu_namespace.emit('stop', {'id': data['id']})
         print("stopped")
 
-    def on_pause(self, *args):
+    def on_pause(self, data):
+        dpu_namespace.emit('pause', {'id': data['id']})
         print("paused")
 
     def on_create(self, *args):
@@ -42,6 +46,7 @@ class CloudNamespace(BaseNamespace):
 
     def on_update(self, *args):
         print("updated")
+
 
 class DpuNamespace(BaseNamespace):
 
@@ -75,7 +80,8 @@ def emit_thread(socket, exp_id):
         socket.emit('data', {'id': exp_id, 'data': {'temp': random.random()}})
         time.sleep(1)
 
-def start_task_loop(loop):
+
+def start_task_loop(loop, e):
     asyncio.set_event_loop(loop)
     loop.run_forever()
 
@@ -116,7 +122,7 @@ if __name__ == '__main__':
         task_loop = asyncio.new_event_loop()
         # Assign the loop to another thread
         # This is what all evolver commands will run in so we don't block the main thread with a while True loop
-        t = Thread(target=start_task_loop, args=(task_loop,))
+        t = Thread(target=start_task_loop, args=(task_loop, e,))
         t.start()
 
         socketIO_cloud = SocketIO(FLAGS.cloud_ip, FLAGS.cloud_port)
@@ -131,6 +137,7 @@ if __name__ == '__main__':
         t2.start()
 
         socketIO_cloud.wait()
+
     except KeyboardInterrupt:
         socketIO_cloud.disconnect()
         socketIO_dpu.disconnect()
