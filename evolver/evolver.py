@@ -123,8 +123,6 @@ class DpuNamespace(BaseNamespace):
     def on_command(self, data):
         print('on_dpu_command', data['cmd'])
         if data['cmd'] == 'result':
-            cloud_namespace.emit('result', {'id': data['result']['id'], 'OD': data['result']['OD'],
-                                            'temp': data['result']['temp'], 'stir': data['result']['stir']})
             parse_results(data['result'])
         else:
             parse_command(data)
