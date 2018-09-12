@@ -9,8 +9,6 @@ import yaml
 
 cloud_namespace = None
 dpu_namespace = None
-STATE = {'running': False}
-
 
 # class PausableThread(Thread):
 #     def __init__(self, group=None, target=None, name=None, args=(), kwargs={}):
@@ -58,6 +56,7 @@ class PausableThread(Thread):
     def resume(self):
         self.paused = False
         self.can_run.set()
+        self.thing_done.set()
 
 
 class CloudNamespace(BaseNamespace):
@@ -74,10 +73,8 @@ class CloudNamespace(BaseNamespace):
 
     def on_experiment(self, data):
         dpu_namespace.emit('experiment', {'id': data['id'], 'alg': data['alg'], 'config': data['config'], 'device': data['device']})
-        print('reconnect cloud')
 
     def on_start(self, data):
-        t.resume()
         dpu_namespace.emit('start', {'id': data['id']})
         print("started")
 
@@ -109,16 +106,14 @@ class DpuNamespace(BaseNamespace):
         print('reconnect dpu')
 
     def on_status(self, data):
-        # t.resume()
         # t2.resume()
         if data['status'] == 1:
             print('DPU sent start command')
-            STATE['running'] = True
+            t.resume()
             # TODO blink
             task_loop.call_soon_threadsafe(emit_thread, self, data['id'])
         else:
             print('DPU not ready')
-        print('status dpu')
 
     def on_command(self, data):
         print('on_dpu_command', data['cmd'])
@@ -131,8 +126,7 @@ class DpuNamespace(BaseNamespace):
 
 
 def emit_thread(socket, exp_id):
-    print(STATE)
-    while STATE['running']:
+    while not t.paused:
         t.can_run.wait()
         OD_data = random.random()
         temp_data = random.random()
@@ -158,15 +152,11 @@ def parse_command(data):
     print(data['cmd'])
     if data['cmd'] == 'start':
         t.start()
-        # task_loop.call_soon_threadsafe(blink.run)
         return 1
     elif data['cmd'] == 'stop':
-        # time.sleep(3)
-        # blink.stop()
-        STATE['running'] = False
+        t.pause()
         return 0
     elif data['cmd'] == 'pause':
-        STATE['running'] = False
         t.pause()
         return 0
 
