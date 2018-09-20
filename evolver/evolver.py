@@ -72,7 +72,7 @@ class CloudNamespace(BaseNamespace):
         print('reconnect cloud')
 
     def on_experiment(self, data):
-        dpu_namespace.emit('experiment', {'id': data['id'], 'alg': data['alg'], 'config': data['config'], 'device': data['device']})
+        dpu_namespace.emit('experiment', {'id': data['id'], 'alg': data['alg'], 'config': data['config'], 'device': data['device'], 'ip': data['ip']})
 
     def on_start(self, data):
         dpu_namespace.emit('start', {'id': data['id']})
