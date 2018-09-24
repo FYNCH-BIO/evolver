@@ -9,7 +9,54 @@ import yaml
 
 cloud_namespace = None
 dpu_namespace = None
-STATE = {'running': False}
+
+# class PausableThread(Thread):
+#     def __init__(self, group=None, target=None, name=None, args=(), kwargs={}):
+#         self._event = Event()
+#         # self.sem = Semaphore()
+#         self.paused = False
+#         Thread.__init__(self, group=group, target=target, args=args)
+#         # if target:
+#         #     args = ((lambda: self._event.wait()),) + args
+#         # super(PausableThread, self).__init__(group, target, name, args, kwargs)
+#
+#     def pause(self):
+#         # self.paused = True
+#         # self.sem.acquire()
+#         self._event.clear()
+#
+#     def resume(self):
+#         # self.sem.release()
+#         # self.paused = False
+#         self._event.set()
+
+class PausableThread(Thread):
+    def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, *, daemon=None):
+        Thread.__init__(self, group=None, target=target, args=args)
+        self.can_run = Event()
+        self.thing_done = Event()
+        self.thing_done.set()
+        self.can_run.set()
+        self.paused = False
+
+    def run(self):
+        while True:
+            self.can_run.wait()
+            try:
+                self.thing_done.clear()
+                self._target(*self._args, **self._kwargs)
+            finally:
+                self.thing_done.set()
+
+    def pause(self):
+        self.paused = True
+        self.can_run.clear()
+        self.thing_done.wait()
+
+    def resume(self):
+        self.paused = False
+        self.can_run.set()
+        self.thing_done.set()
 
 
 # class PausableThread(Thread):
@@ -113,12 +160,11 @@ class DpuNamespace(BaseNamespace):
         # t2.resume()
         if data['status'] == 1:
             print('DPU sent start command')
-            STATE['running'] = True
+            t.resume()
             # TODO blink
             task_loop.call_soon_threadsafe(emit_thread, self, data['id'])
         else:
             print('DPU not ready')
-        print('status dpu')
 
     def on_command(self, data):
         print('on_dpu_command', data['cmd'])
@@ -127,6 +173,14 @@ class DpuNamespace(BaseNamespace):
         else:
             parse_command(data)
 
+def emit_thread(socket, exp_id):
+    while not t.paused:
+        t.can_run.wait()
+        OD_data = random.random()
+        temp_data = random.random()
+        stir_data = random.choice([0, 1])
+        socket.emit('data', {'id': exp_id, 'data': {'OD': OD_data, 'temp': temp_data, 'stir': stir_data}})
+        time.sleep(5)
 
 def emit_thread(socket, exp_id):
     print(STATE)
@@ -138,7 +192,7 @@ def emit_thread(socket, exp_id):
         socket.emit('data', {'id': exp_id, 'data': {'OD': OD_data, 'temp': temp_data, 'stir': stir_data}})
         time.sleep(5)
 
-
+        
 def start_task_loop(loop):
     asyncio.set_event_loop(loop)
     loop.run_forever()
@@ -156,7 +210,6 @@ def parse_command(data):
     print(data['cmd'])
     if data['cmd'] == 'start':
         t.start()
-        # task_loop.call_soon_threadsafe(blink.run)
         return 1
     elif data['cmd'] == 'stop':
         # time.sleep(3)
