@@ -1,34 +1,106 @@
 from socketIO_client import SocketIO, BaseNamespace
+import socket
+import socketio
 import time
-from threading import Thread, Event, Semaphore
-# import threading
-import asyncio
-# import blink
-import random
 import yaml
+import serial
+import asyncio
+import numpy as np
+from multi_server import MultiServer
+from threading import Thread, Event, Semaphore
 
-cloud_namespace = None
 dpu_namespace = None
+evolver_ip = None
 
-# class PausableThread(Thread):
-#     def __init__(self, group=None, target=None, name=None, args=(), kwargs={}):
-#         self._event = Event()
-#         # self.sem = Semaphore()
-#         self.paused = False
-#         Thread.__init__(self, group=group, target=target, args=args)
-#         # if target:
-#         #     args = ((lambda: self._event.wait()),) + args
-#         # super(PausableThread, self).__init__(group, target, name, args, kwargs)
-#
-#     def pause(self):
-#         # self.paused = True
-#         # self.sem.acquire()
-#         self._event.clear()
-#
-#     def resume(self):
-#         # self.sem.release()
-#         # self.paused = False
-#         self._event.set()
+SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 2)
+SERIAL.flushInput()
+SERIAL.close()
+
+DEFAULT_PARAMS = {"OD":["we", "turb", "all"], "temp":["xr", "temp","all"], "stir": ["zv", "stir", "all"], "pump": ["st", "pump", "all"]}
+DEFAULT_CONFIG = {}
+PARAM = {}
+DATA = {}
+#CONFIG = {'OD':[2125] * 16, 'temp':[300] * 16, 'stir':[10]*16, 'pump':['t','1111111111','5','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0']}
+CONFIG = {}
+
+ENDING_SEND = '!'
+ENDING_RETURN = 'end'
+
+global sio
+sio = socketio.AsyncServer()
+
+@sio.on('connect', namespace = '/dpu-evolver')
+async def on_connect(sid, environ):
+    print('Connected dpu')
+
+@sio.on('start', namespace = '/dpu-evolver')
+async def on_start(sid, data):
+    print('starting to send data')
+    if data['evolver_ip'] == evolver_ip:
+        print('Starting experiment')
+        if t.paused:
+            t.resume()
+        task_loop.call_soon_threadsafe(emit_thread, dpu_namespace, data['exp_id'])
+
+@sio.on('stop', namespace = '/dpu-evolver')
+async def on_stop(sid, data):
+    if data['evolver_ip'] == evolver_ip:
+        print('stop')
+        t.pause()
+
+@sio.on('define', namespace = '/dpu-evolver')
+async def on_define(sid, data):
+    print('finally defining')
+    if data['evolver_ip'] == evolver_ip:
+        print('defining params')
+        define_parameters(data['params'])
+        define_default_config(data['config'])
+
+@sio.on('disconnect', namespace = '/dpu-evolver')
+async def on_disconnect(sid):
+    print('finally disconnected')
+
+@sio.on('command', namespace = '/dpu-evolver')
+async def on_command(sid, data):
+    if data['evolver_ip'] == evolver_ip:
+        param = data.get('param')
+        message = data.get('message')
+        vials = data.get('vials')
+        values = data.get('values')
+        if message:
+            CONFIG[param] = message
+        else:
+            parse_set(param, vials, values)
+        push_arduino()
+        SERIAL.close()
+        CONFIG.clear()
+
+def parse_set(param, vials, values):
+    arduino_message = []
+    vials = list(map(int,vials.split(',')))
+    if param == 'pump':
+        arduino_message = get_turbidostat_command(vials, values)
+    else:
+        arduino_message = values.split(',')
+    CONFIG[param] = arduino_message
+
+def get_turbidostat_command(vial_nums, num_secs):
+    num_secs = float(num_secs)
+    control = np.power(2, range(0,32), dtype='int64')
+    print(control)
+    empty_vals = [0] * 15
+    print(vial_nums)
+    pumps_control = 0
+    for vial_num in vial_nums:
+        pumps_control += control[vial_num]
+    pumps_binary = "{0:b}".format(pumps_control)
+
+    while len(pumps_binary) < 16:
+        pumps_binary = '0' + pumps_binary
+    pump_cmd = ["t", pumps_binary, '{:.2f}'.format(num_secs)] + empty_vals
+
+    return pump_cmd
+        
 
 class PausableThread(Thread):
     def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, *, daemon=None):
@@ -59,45 +131,14 @@ class PausableThread(Thread):
         self.thing_done.set()
 
 
-class CloudNamespace(BaseNamespace):
-
-    def on_connect(self, *args):
-        self.emit('data')
-        print('connected cloud')
-
-    def on_disconnect(self, *args):
-        print('disconnected cloud')
-
-    def on_reconnect(self, *args):
-        print('reconnect cloud')
-
-    def on_experiment(self, data):
-        dpu_namespace.emit('experiment', {'id': data['id'], 'alg': data['alg'], 'config': data['config'], 'device': data['device']})
+class DpuNamespace(BaseNamespace):
 
     def on_start(self, data):
-        dpu_namespace.emit('start', {'id': data['id']})
-        print("started")
-
-    def on_stop(self, data):
-        dpu_namespace.emit('stop', {'id': data['id']})
-        print("stopped")
-
-    def on_pause(self, data):
-        dpu_namespace.emit('pause', {'id': data['id']})
-        print("paused")
-
-    def on_create(self, *args):
-        print(args)
-        print("created")
-
-    def on_update(self, *args):
-        print("updated")
-
-
-class DpuNamespace(BaseNamespace):
+        print('received a start command')
 
     def on_connect(self, *args):
         print('connected dpu')
+        self.emit('ip', {'ip': evolver_ip}) 
 
     def on_disconnect(self, *args):
         print('disconnected dpu')
@@ -105,69 +146,99 @@ class DpuNamespace(BaseNamespace):
     def on_reconnect(self, *args):
         print('reconnect dpu')
 
-    def on_status(self, data):
-        # t2.resume()
-        if data['status'] == 1:
-            print('DPU sent start command')
-            t.resume()
-            # TODO blink
-            task_loop.call_soon_threadsafe(emit_thread, self, data['id'])
-        else:
-            print('DPU not ready')
-
-    def on_command(self, data):
-        print('on_dpu_command', data['cmd'])
-        if data['cmd'] == 'result':
-            cloud_namespace.emit('result', {'id': data['result']['id'], 'OD': data['result']['OD'],
-                                            'temp': data['result']['temp'], 'stir': data['result']['stir']})
-            parse_results(data['result'])
-        else:
-            parse_command(data)
 
 
-def emit_thread(socket, exp_id):
+def emit_thread(dpu_socket, exp_id):
     while not t.paused:
         t.can_run.wait()
-        OD_data = random.random()
-        temp_data = random.random()
-        stir_data = random.choice([0, 1])
-        socket.emit('data', {'id': exp_id, 'data': {'OD': OD_data, 'temp': temp_data, 'stir': stir_data}})
+        global CONFIG
+        global DEFAULT_CONFIG
+        CONFIG = DEFAULT_CONFIG.copy()
+        print('default config')
+        print(CONFIG)
+        ping_arduino()
+        dpu_socket.emit('data', {'id': exp_id, 'data': {'OD': DATA['OD'], 'temp': DATA['temp']}})        
+        t.thing_done.set()
+        CONFIG.clear()
         time.sleep(5)
-
 
 def start_task_loop(loop):
     asyncio.set_event_loop(loop)
-    loop.run_forever()
-
-
-def parse_results(data):
-    print("results", data)
-
-
-def parse_command(data):
-    if not data['cmd']:
-        print('No command found')
-        return 0
-
-    print(data['cmd'])
-    if data['cmd'] == 'start':
-        t.start()
-        return 1
-    elif data['cmd'] == 'stop':
-        t.pause()
-        return 0
-    elif data['cmd'] == 'pause':
-        t.pause()
-        return 0
-
+    loop.run_forever()        
 
 def start_dpu_thread(socket):
     socket.wait()
+
+def config_to_arduino(key, header, ending, method):
+    print('config to arduino...')
+    global CONFIG
+    global DEFUALT_CONFIG
+    if not CONFIG:
+        CONFIG = DEFAULT_CONFIG.copy()
+    if 'temp' in CONFIG:
+        DEFAULT_CONFIG['temp'] = CONFIG['temp']
+    myList = CONFIG.get(key)
+    SERIAL.open()
+    SERIAL.flushInput()
+    output = ''
+    if method == 'all' and myList is not None:
+        myString = ','.join(map(str,myList))
+        output = header + myString + ', ' + ending
+        print(output)
+        SERIAL.write(bytes(output, 'UTF-8'))
+
+    if method == 'indiv' and myList is not None:
+        for x in myList.split(','):
+            output = header + x + ending
+            SERIAL.write(bytes(output,'UTF-8'))
+
+def data_from_arduino(key, header, ending):
+    try:
+        received = SERIAL.readline().decode('utf-8')
+        if received[0:4] == header and received[-3:] == ending:
+            dataList = [int(s) for s in received[4:-4].split(',')]
+            DATA[key] = dataList
+        else:
+            DATA[key] = 'NaN'
+    except ValueError:
+        DATA[key] = 'NaN'
+    SERIAL.close()
+
+
+def ping_arduino():
+    global CONFIG
+    print('this is my config now')
+    print(CONFIG)
+    for key, value in CONFIG.items():
+        print('getting ' + key)
+        config_to_arduino(key, PARAM[key][0], ENDING_SEND, PARAM[key][2])
+        data_from_arduino(key, PARAM[key][1], ENDING_RETURN)
+
+def push_arduino():
+    global CONFIG
+    for key, value in CONFIG.items():
+        config_to_arduino(key, PARAM[key][0], ENDING_SEND, PARAM[key][2])
+    CONFIG.clear()
+
+def define_parameters(param_json):
+    PARAM.clear()
+    PARAM.update(param_json)
+
+def define_default_config(config_json):
+    DEFAULT_CONFIG.clear()
+    DEFAULT_CONFIG.update(config_json)
 
 
 if __name__ == '__main__':
 
     FLAGS = lambda: None
+    # need to get our IP
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    evolver_ip = s.getsockname()[0]
+    s.close()
+
+
 
     with open('conf.yml', 'r') as ymlfile:
         conf = yaml.load(ymlfile)
@@ -175,27 +246,20 @@ if __name__ == '__main__':
             setattr(FLAGS, element, conf[element])
 
     try:
-        print('Connecting to Evolver and DPU')
-        # Create a new loop
         task_loop = asyncio.new_event_loop()
-
         t = PausableThread(target=start_task_loop, args=(task_loop,))
-        t.start()
+        t.start()        
 
-        socketIO_cloud = SocketIO(FLAGS.cloud_ip, FLAGS.cloud_port)
-        cloud_namespace = socketIO_cloud.define(CloudNamespace, '/evolver-cloud')
-
+        define_parameters(DEFAULT_PARAMS)
         socketIO_dpu = SocketIO(FLAGS.dpu_ip, FLAGS.dpu_port)
         dpu_namespace = socketIO_dpu.define(DpuNamespace, '/evolver-dpu')
+        PARAM = DEFAULT_PARAMS
+        ms = MultiServer()
+        app1 = ms.add_app(port=8081)
+        sio.attach(app1)
+        ms.run_all()
+    
 
-        t2 = PausableThread(target=start_dpu_thread, args=(socketIO_dpu,))
-        # t2 = Thread(target=start_dpu_thread, args=(socketIO_dpu, e2,))
-
-        t2.daemon = True
-        t2.start()
-
-        socketIO_cloud.wait()
 
     except KeyboardInterrupt:
-        socketIO_cloud.disconnect()
         socketIO_dpu.disconnect()
