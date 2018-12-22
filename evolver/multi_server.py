@@ -34,7 +34,7 @@ class MultiServer:
                 runner = web.AppRunner(app[0])
                 self.loop.run_until_complete(runner.setup())
 
-                site = web.TCPSite(runner, '0.0.0.0', app[1])
+                site = web.TCPSite(runner, 'localhost', app[1])
                 self.loop.run_until_complete(site.start())
 
                 names = sorted(str(s.name) for s in runner.sites)
