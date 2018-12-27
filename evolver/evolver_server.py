@@ -2,6 +2,7 @@ import socketio
 import serial
 import evolver_client
 import time
+import asyncio
 
 SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 3)
 SERIAL.flushInput()
@@ -18,6 +19,8 @@ ENDING_SEND = '!'
 ENDING_RETURN = 'end'
 
 command_queue = []
+last_data = None
+last_time = None
 
 sio = socketio.AsyncServer()
 
@@ -54,10 +57,23 @@ async def on_command(sid, data):
 
 @sio.on('data', namespace = '/dpu-evolver')
 async def on_data(sid, data):
-    global CONFIG
+    global CONFIG, last_data
     CONFIG = DEFAULT_CONFIG.copy()
     ping_arduino()
+    last_data = {'OD': DATA['OD'], 'temp':DATA['temp']} 
+    last_time = time.time()
     evolver_client.send_data({'OD': DATA['OD'], 'temp': DATA['temp']})
+
+@sio.on('pingdata', namespace = '/dpu-evolver')
+async def on_pingdata(sid, data):
+    global last_data
+    print("Pinging it")
+    if last_data is None or time.time() - last_time > 60 * 10:
+        ping_arduino()
+        last_data = {'OD': DATA['OD'], 'temp':DATA['temp']} 
+        last_time = time.time()
+    await sio.emit('dataresponse',last_data, namespace='/dpu-evolver')
+
 
 def run_commands():
     global command_queue, CONFIG
