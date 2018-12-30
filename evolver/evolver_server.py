@@ -3,6 +3,7 @@ import serial
 import evolver_client
 import time
 import asyncio
+import json
 
 SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 3)
 SERIAL.flushInput()
@@ -66,14 +67,25 @@ async def on_data(sid, data):
 
 @sio.on('pingdata', namespace = '/dpu-evolver')
 async def on_pingdata(sid, data):
-    global last_data
-    print("Pinging it")
+    global last_data, last_time
     if last_data is None or time.time() - last_time > 60 * 10:
         ping_arduino()
         last_data = {'OD': DATA['OD'], 'temp':DATA['temp']} 
         last_time = time.time()
     await sio.emit('dataresponse',last_data, namespace='/dpu-evolver')
 
+@sio.on('getcalibration', namespace = '/dpu-evolver')
+async def on_getcalibration(sid, data):
+    cal = load_calibration()
+    await sio.emit('calibration', cal, namespace='/dpu-evolver')
+
+@sio.on('loadcalibration', namespace = '/dpu-evolver')
+async def on_loadcalibration(sid, data):
+    pass
+
+def load_calibration():
+    with open('test_device.json', 'r') as f:
+        return json.loads(f.read())
 
 def run_commands():
     global command_queue, CONFIG
