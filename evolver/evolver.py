@@ -5,6 +5,7 @@ from threading import Thread
 import socket
 import evolver_client
 import evolver_server
+import os
 
 
 def start_background_loop(loop):
@@ -20,7 +21,7 @@ if __name__ == '__main__':
     evolver_ip = s.getsockname()[0]
     s.close()
 
-    with open('conf.yml', 'r') as ymlfile:
+    with open(os.path.realpath(os.path.join(os.getcwd(),os.path.dirname(__file__), 'conf.yml')), 'r') as ymlfile:
         conf = yaml.load(ymlfile)
         for element in conf:
             setattr(FLAGS, element, conf[element])

@@ -4,16 +4,16 @@ import evolver_client
 import time
 import asyncio
 import json
+import os
 
 SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 3)
 SERIAL.flushInput()
 SERIAL.close()
 
 DEFAULT_PARAMS = {"OD":["we", "turb", "all"], "temp":["xr", "temp","all"], "stir": ["zv", "stir", "all"], "pump": ["st", "pump", "all"]}
-DEFAULT_CONFIG = {}
+DEFAULT_CONFIG = {'OD':[2125] * 16, 'temp':['NaN'] * 16}
 PARAM = {}
 DATA = {}
-#CONFIG = {'OD':[2125] * 16, 'temp':[300] * 16, 'stir':[10]*16, 'pump':['t','1111111111','5','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0']}
 CONFIG = {}
 
 ENDING_SEND = '!'
@@ -51,23 +51,28 @@ async def on_command(sid, data):
     if param != 'pump':
         config[param] = message
     else:
-        config[param] = get_pump_command(message['pumps_binary'], message['pump_time'], message['efflux_pump_time'], message['delay_interval'], message['times_to_repeat'], message['run_efflux'])
+        if message['stop']:
+            config[param] = get_pump_stop_command()
+        else:
+            config[param] = get_pump_command(message['pumps_binary'], message['pump_time'], message['efflux_pump_time'], message['delay_interval'], message['times_to_repeat'], message['run_efflux'])
     
     command_queue.append(dict(config))
     run_commands()
 
 @sio.on('data', namespace = '/dpu-evolver')
 async def on_data(sid, data):
-    global CONFIG, last_data
+    global CONFIG, last_data, DEFAULT_CONFIG
     CONFIG = DEFAULT_CONFIG.copy()
     ping_arduino()
     last_data = {'OD': DATA['OD'], 'temp':DATA['temp']} 
     last_time = time.time()
-    evolver_client.send_data({'OD': DATA['OD'], 'temp': DATA['temp']})
+    data_response = {'OD': DATA['OD'], 'temp': DATA['temp']}
+    await sio.emit('dataresponse', data_response, namespace='/dpu-evolver')
 
 @sio.on('pingdata', namespace = '/dpu-evolver')
 async def on_pingdata(sid, data):
-    global last_data, last_time
+    global last_data, last_time, CONFIG, DEFAULT_CONFIG
+    CONFIG = DEFAULT_CONFIG.copy()
     if last_data is None or time.time() - last_time > 60 * 10:
         ping_arduino()
         last_data = {'OD': DATA['OD'], 'temp':DATA['temp']} 
@@ -84,7 +89,9 @@ async def on_loadcalibration(sid, data):
     pass
 
 def load_calibration():
-    with open('test_device.json', 'r') as f:
+    location = os.path.realpath(os.path.join(os.getcwd(),
+        os.path.dirname(__file__)))
+    with open(os.path.join(location, 'test_device.json'), 'r') as f:
         return json.loads(f.read())
 
 def run_commands():
@@ -119,6 +126,10 @@ def get_pump_command(pumps_binary, num_secs, num_secs_efflux, interval, times_to
     pump_cmd = ["p", '{:.2f}'.format(num_secs), '{:.2f}'.format(num_secs_efflux), interval, times_to_repeat, run_efflux, pumps_binary] + empty_vals
 
     return pump_cmd
+
+def get_pump_stop_command():
+    empty_vals = [0] * 17
+    pump_cmd = ['o'] + empty_vals
 
 def remove_duplicate_commands(command_queue):
     commands_seen = set()
