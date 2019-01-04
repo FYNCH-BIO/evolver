@@ -1,5 +1,6 @@
 import asyncio
 from aiohttp import web
+from threading import Thread
 
 
 class MultiServer:
@@ -25,7 +26,7 @@ class MultiServer:
             await ws.close()
         app['websockets'].clear()
 
-    def run_all(self):
+    def run_all(self, t):
         try:
             for app in self._apps:
                 app[0]['websockets'] = {}
@@ -34,17 +35,18 @@ class MultiServer:
                 runner = web.AppRunner(app[0])
                 self.loop.run_until_complete(runner.setup())
 
-                site = web.TCPSite(runner, 'localhost', app[1])
+                site = web.TCPSite(runner, '0.0.0.0', app[1])
                 self.loop.run_until_complete(site.start())
 
                 names = sorted(str(s.name) for s in runner.sites)
                 print("======== Running on {} ========".format(', '.join(names)))
-
-            print("(Press CTRL+C to quit)")
-            self.loop.run_forever()
+                t = Thread(target = start_background_loop, args = (self.loop,))
+                t.daemon = True
+                t.start()
 
         except KeyboardInterrupt:
             print('Exiting application due to KeyboardInterrupt')
-        finally:
-            for app in self._apps:
-                app[0].shutdown()
+
+def start_background_loop(loop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()

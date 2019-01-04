@@ -1,10 +1,12 @@
 import socketio
 import serial
 import evolver_client
+import evolver
 import time
 import asyncio
 import json
 import os
+from threading import Thread
 
 SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 3)
 SERIAL.flushInput()
@@ -20,16 +22,23 @@ ENDING_SEND = '!'
 ENDING_RETURN = 'end'
 
 command_queue = []
+serial_queue = []
 last_data = None
-last_time = None
+last_time = time.time() 
+running = False
+connected = False
+serial_available = True
+s_running = False
 
-sio = socketio.AsyncServer()
+sio = socketio.AsyncServer(async_handlers=True)
 
 @sio.on('connect', namespace = '/dpu-evolver')
 async def on_connect(sid, environ):
     print('Connected dpu as server')
+    global DEFAULT_PARAMS, PARAM, connected
     define_parameters(DEFAULT_PARAMS)
     PARAM = DEFAULT_PARAMS
+    connected = True 
 
 @sio.on('define', namespace = '/dpu-evolver')
 async def on_define(sid, data):
@@ -39,10 +48,13 @@ async def on_define(sid, data):
 
 @sio.on('disconnect', namespace = '/dpu-evolver')
 async def on_disconnect(sid):
+    global connected
     print('Disconnected dpu as Server')
+    connected = False
 
 @sio.on('command', namespace = '/dpu-evolver')
 async def on_command(sid, data):
+    global s_running
     param = data.get('param')
     message = data.get('message')
     vials = data.get('vials')
@@ -51,33 +63,40 @@ async def on_command(sid, data):
     if param != 'pump':
         config[param] = message
     else:
-        if message['stop']:
+        if 'stop' in message:
             config[param] = get_pump_stop_command()
         else:
             config[param] = get_pump_command(message['pumps_binary'], message['pump_time'], message['efflux_pump_time'], message['delay_interval'], message['times_to_repeat'], message['run_efflux'])
     
-    command_queue.append(dict(config))
+    config['push'] = ''
+    # Commands go to the front of the queue, then tell the arduinos to not use the serial port.
+    s_running = True
+    command_queue.insert(0, dict(config))
+    arduino_serial(False)
+    time.sleep(.2)
     run_commands()
+    time.sleep(.5)
+    arduino_serial(True)
+    s_running = False
 
 @sio.on('data', namespace = '/dpu-evolver')
 async def on_data(sid, data):
-    global CONFIG, last_data, DEFAULT_CONFIG
+    global CONFIG, last_data, DEFAULT_CONFIG, command_queue
     CONFIG = DEFAULT_CONFIG.copy()
-    ping_arduino()
+    command_queue.append(dict(CONFIG))
+    run_commands()
     last_data = {'OD': DATA['OD'], 'temp':DATA['temp']} 
-    last_time = time.time()
-    data_response = {'OD': DATA['OD'], 'temp': DATA['temp']}
-    await sio.emit('dataresponse', data_response, namespace='/dpu-evolver')
+    await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
 
+# TODO: Remove redundant function
 @sio.on('pingdata', namespace = '/dpu-evolver')
 async def on_pingdata(sid, data):
-    global last_data, last_time, CONFIG, DEFAULT_CONFIG
+    global last_data, CONFIG, DEFAULT_CONFIG, command_queue
     CONFIG = DEFAULT_CONFIG.copy()
-    if last_data is None or time.time() - last_time > 60 * 10:
-        ping_arduino()
-        last_data = {'OD': DATA['OD'], 'temp':DATA['temp']} 
-        last_time = time.time()
-    await sio.emit('dataresponse',last_data, namespace='/dpu-evolver')
+    command_queue.append(dict(CONFIG))
+    run_commands()
+    last_data = {'OD': DATA['OD'], 'temp':DATA['temp']} 
+    await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
 
 @sio.on('getcalibration', namespace = '/dpu-evolver')
 async def on_getcalibration(sid, data):
@@ -95,13 +114,17 @@ def load_calibration():
         return json.loads(f.read())
 
 def run_commands():
-    global command_queue, CONFIG
+    global command_queue, CONFIG, running
+    running = True
     command_queue = remove_duplicate_commands(command_queue)
-    
     while len(command_queue) > 0:
-        CONFIG = command_queue.pop(0)
-        print('Running command: ' + str(CONFIG))
-        push_arduino()
+        command_queue = remove_duplicate_commands(command_queue)
+        config = command_queue.pop(0)
+        print('Running command: ' + str(config))
+        if 'push' in config:
+            push_arduino(config)
+        else:
+            ping_arduino(config)
 
         # Need to wait to prevent race condition:
         # https://stackoverflow.com/questions/1618141/pyserial-problem-with-arduino-works-with-the-python-shell-but-not-in-a-program/4941880#4941880
@@ -111,6 +134,7 @@ def run_commands():
             If you insert a sleep, you wait for the Arduino to come up so your serial code. This is why it works 
             interactively; you were waiting the 1.5 seconds needed for the software to come up."""
         time.sleep(.5)
+    running = False
 
 # TODO - refactor this
 def get_pump_command(pumps_binary, num_secs, num_secs_efflux, interval, times_to_repeat, run_efflux):
@@ -153,13 +177,14 @@ def remove_duplicate_commands(command_queue):
 
     return command_queue
 
-def config_to_arduino(key, header, ending, method):
-    global CONFIG, SERIAL, DEFAULT_CONFIG, DATA
-    if not CONFIG:
-        CONFIG = DEFAULT_CONFIG.copy()
-    if 'temp' in CONFIG:
-        DEFAULT_CONFIG['temp'] = CONFIG['temp']
-    myList = CONFIG.get(key)
+def config_to_arduino(key, header, ending, method, config):
+    global SERIAL, DEFAULT_CONFIG, DATA, s_running
+    if not config:
+        config = DEFAULT_CONFIG.copy()
+    if 'temp' in config:
+        DEFAULT_CONFIG['temp'] = config['temp']
+    myList = config.get(key)
+
     SERIAL.open()
     SERIAL.flushInput()
     output = ''
@@ -175,9 +200,10 @@ def config_to_arduino(key, header, ending, method):
             SERIAL.write(bytes(output,'UTF-8'))
 
 def data_from_arduino(key, header, ending):
-    global SERIAL, DATA
+    global SERIAL, DATA, serial_available
     try:
-        received = SERIAL.readline().decode('utf-8')
+        if serial_available:
+            received = SERIAL.readline().decode('utf-8')
         if received[0:4] == header and received[-3:] == ending:
             dataList = [int(s) for s in received[4:-4].split(',')]
             DATA[key] = dataList
@@ -185,24 +211,50 @@ def data_from_arduino(key, header, ending):
             DATA[key] = 'NaN'
             print('Problem with data:')
             print(received)
-    except (ValueError, serial.serialutil.SerialException) as e:
+    except (TypeError, ValueError, serial.serialutil.SerialException) as e:
         print(e)
         DATA[key] = 'NaN'
-    SERIAL.close()
+    if serial_available:
+        try:
+            SERIAL.close()
+        except (TypeError, ValueError, serial.serialutil.SerialException) as e:
+            pass
 
-def ping_arduino():
-    global CONFIG, PARAM, ENDING_SEND, ENDING_RETURN
-    for key, value in CONFIG.items():
-        config_to_arduino(key, PARAM[key][0], ENDING_SEND, PARAM[key][2])
-        data_from_arduino(key, PARAM[key][1], ENDING_RETURN)
-    CONFIG.clear()
+def ping_arduino(config):
+    global PARAM, ENDING_SEND, ENDING_RETURN, SERIAL, serial_available
+    if not SERIAL.isOpen():
+        for key, value in config.items():
+            if not serial_available:
+                break
+            config_to_arduino(key, PARAM[key][0], ENDING_SEND, PARAM[key][2], config)
+            if serial_available:
+                data_from_arduino(key, PARAM[key][1], ENDING_RETURN)
 
-def push_arduino():
-    global CONFIG, PARAM, ENDING_SEND, SERIAL
-    for key, value in CONFIG.items():
-        config_to_arduino(key, PARAM[key][0], ENDING_SEND, PARAM[key][2])
+def push_arduino(config):
+    global PARAM, ENDING_SEND, SERIAL
+    if not SERIAL.isOpen():
+        for key, value in config.items():
+            if key is not 'push':
+                config_to_arduino(key, PARAM[key][0], ENDING_SEND, PARAM[key][2], config)
+                SERIAL.close()
+
+def arduino_serial(can_use_serial):
+    global SERIAL, DEFAULT_CONFIG, PARAM, ENDING_SEND, serial_available
+    cfg = DEFAULT_CONFIG.copy()
+    serial_available = can_use_serial
+    # Reset the serial connection
+    if SERIAL.isOpen():
         SERIAL.close()
-    CONFIG.clear()
+    SERIAL.open()
+    for key, value in cfg.items():
+        header = PARAM[key][0]
+        message = "sf"
+        if can_use_serial:
+            message = "st"
+        output = header + ','.join([message] + ["0"] * 15) + " " + ENDING_SEND
+        print(output)
+        SERIAL.write(bytes(output, 'UTF-8'))
+    SERIAL.close()
 
 def define_parameters(param_json):
     global PARAM
@@ -216,3 +268,20 @@ def define_default_config(config_json):
 
 def attach(app):
     sio.attach(app)
+
+def is_connected():
+    global connected
+    return connected
+
+async def broadcast():
+    global last_data, last_time, CONFIG, DEFAULT_CONFIG, command_queue, DATA, s_running
+    current_time = time.time()
+    if s_running:
+        return
+    CONFIG = DEFAULT_CONFIG.copy()
+    command_queue.append(dict(CONFIG))
+    run_commands()
+    if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp'):
+        last_data = {'OD': DATA['OD'], 'temp':DATA['temp']} 
+        last_time = time.time()
+        await sio.emit('databroadcast', last_data, namespace='/dpu-evolver')
