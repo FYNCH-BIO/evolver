@@ -24,21 +24,19 @@ ENDING_RETURN = 'end'
 command_queue = []
 serial_queue = []
 last_data = None
-last_time = time.time() 
+last_time = time.time()
 running = False
 connected = False
 serial_available = True
 s_running = False
-
 sio = socketio.AsyncServer(async_handlers=True)
 
 @sio.on('connect', namespace = '/dpu-evolver')
 async def on_connect(sid, environ):
     print('Connected dpu as server')
     global DEFAULT_PARAMS, PARAM, connected
-    define_parameters(DEFAULT_PARAMS)
     PARAM = DEFAULT_PARAMS
-    connected = True 
+    connected = True
 
 @sio.on('define', namespace = '/dpu-evolver')
 async def on_define(sid, data):
@@ -63,11 +61,11 @@ async def on_command(sid, data):
     if param != 'pump':
         config[param] = message
     else:
-        if 'stop' in message:
+        if message == 'stop':
             config[param] = get_pump_stop_command()
         else:
             config[param] = get_pump_command(message['pumps_binary'], message['pump_time'], message['efflux_pump_time'], message['delay_interval'], message['times_to_repeat'], message['run_efflux'])
-    
+
     config['push'] = ''
     # Commands go to the front of the queue, then tell the arduinos to not use the serial port.
     s_running = True
@@ -75,7 +73,7 @@ async def on_command(sid, data):
     arduino_serial(False)
     time.sleep(.2)
     run_commands()
-    time.sleep(.5)
+    time.sleep(.2)
     arduino_serial(True)
     s_running = False
 
@@ -85,7 +83,7 @@ async def on_data(sid, data):
     CONFIG = DEFAULT_CONFIG.copy()
     command_queue.append(dict(CONFIG))
     run_commands()
-    last_data = {'OD': DATA['OD'], 'temp':DATA['temp']} 
+    last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16)}
     await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
 
 # TODO: Remove redundant function
@@ -95,7 +93,7 @@ async def on_pingdata(sid, data):
     CONFIG = DEFAULT_CONFIG.copy()
     command_queue.append(dict(CONFIG))
     run_commands()
-    last_data = {'OD': DATA['OD'], 'temp':DATA['temp']} 
+    last_data = {'OD': DATA['OD'], 'temp':DATA['temp']}
     await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
 
 @sio.on('getcalibration', namespace = '/dpu-evolver')
@@ -120,7 +118,6 @@ def run_commands():
     while len(command_queue) > 0:
         command_queue = remove_duplicate_commands(command_queue)
         config = command_queue.pop(0)
-        print('Running command: ' + str(config))
         if 'push' in config:
             push_arduino(config)
         else:
@@ -129,9 +126,9 @@ def run_commands():
         # Need to wait to prevent race condition:
         # https://stackoverflow.com/questions/1618141/pyserial-problem-with-arduino-works-with-the-python-shell-but-not-in-a-program/4941880#4941880
 
-        """ When you open the serial port, this causes the Arduino to reset. Since the Arduino takes some time to bootup, 
-            all the input goes to the bitbucket (or probably to the bootloader which does god knows what with it). 
-            If you insert a sleep, you wait for the Arduino to come up so your serial code. This is why it works 
+        """ When you open the serial port, this causes the Arduino to reset. Since the Arduino takes some time to bootup,
+            all the input goes to the bitbucket (or probably to the bootloader which does god knows what with it).
+            If you insert a sleep, you wait for the Arduino to come up so your serial code. This is why it works
             interactively; you were waiting the 1.5 seconds needed for the software to come up."""
         time.sleep(.5)
     running = False
@@ -140,7 +137,7 @@ def run_commands():
 def get_pump_command(pumps_binary, num_secs, num_secs_efflux, interval, times_to_repeat, run_efflux):
     num_secs = float(num_secs)
     empty_vals = [0] * 11
-    
+
     if run_efflux:
         run_efflux = 1
     else:
@@ -154,6 +151,7 @@ def get_pump_command(pumps_binary, num_secs, num_secs_efflux, interval, times_to
 def get_pump_stop_command():
     empty_vals = [0] * 17
     pump_cmd = ['o'] + empty_vals
+    return pump_cmd
 
 def remove_duplicate_commands(command_queue):
     commands_seen = set()
@@ -171,7 +169,7 @@ def remove_duplicate_commands(command_queue):
                 # store index for non-revered list
                 commands_to_delete.append(len(command_queue) - 1 - i)
             commands_seen.add(command_check)
-               
+
     for command_index in commands_to_delete:
         del command_queue[command_index]
 
@@ -209,10 +207,7 @@ def data_from_arduino(key, header, ending):
             DATA[key] = dataList
         else:
             DATA[key] = 'NaN'
-            print('Problem with data:')
-            print(received)
     except (TypeError, ValueError, serial.serialutil.SerialException) as e:
-        print(e)
         DATA[key] = 'NaN'
     if serial_available:
         try:
@@ -274,14 +269,15 @@ def is_connected():
     return connected
 
 async def broadcast():
-    global last_data, last_time, CONFIG, DEFAULT_CONFIG, command_queue, DATA, s_running
+    global last_data, last_time, CONFIG, DEFAULT_CONFIG, command_queue, DATA, s_running, connected
     current_time = time.time()
-    if s_running:
+    if s_running or not connected:
         return
+
     CONFIG = DEFAULT_CONFIG.copy()
     command_queue.append(dict(CONFIG))
     run_commands()
     if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp'):
-        last_data = {'OD': DATA['OD'], 'temp':DATA['temp']} 
+        last_data = {'OD': DATA['OD'], 'temp':DATA['temp']}
         last_time = time.time()
         await sio.emit('databroadcast', last_data, namespace='/dpu-evolver')
