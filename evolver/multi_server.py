@@ -26,7 +26,7 @@ class MultiServer:
             await ws.close()
         app['websockets'].clear()
 
-    def run_all(self, t):
+    def run_all(self):
         try:
             for app in self._apps:
                 app[0]['websockets'] = {}

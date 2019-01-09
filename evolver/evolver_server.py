@@ -1,6 +1,5 @@
 import socketio
 import serial
-import evolver_client
 import evolver
 import time
 import asyncio
