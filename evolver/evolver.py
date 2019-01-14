@@ -1,3 +1,4 @@
+#!/usr/local/bin/env python3.6
 import yaml
 import time
 import asyncio
@@ -18,6 +19,7 @@ if __name__ == '__main__':
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80))
     evolver_ip = s.getsockname()[0]
+    evolver_server.set_ip(evolver_ip)
     s.close()
 
     with open(os.path.realpath(os.path.join(os.getcwd(),os.path.dirname(__file__), 'conf.yml')), 'r') as ymlfile:
@@ -40,4 +42,7 @@ if __name__ == '__main__':
         if last_time is None or current_time - last_time > 60:
             if evolver_server.is_connected():
                 last_time = current_time
-                bloop.run_until_complete(evolver_server.broadcast())
+                try:
+                    bloop.run_until_complete(evolver_server.broadcast())
+                except serial.serialutil.SerialException:
+                    pass
