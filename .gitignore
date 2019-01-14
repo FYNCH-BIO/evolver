@@ -106,3 +106,4 @@ venv.bak/
 .idea
 
 .yml
+.DS_Store
