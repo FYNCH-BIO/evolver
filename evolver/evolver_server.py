@@ -93,7 +93,7 @@ async def on_pingdata(sid, data):
     CONFIG = DEFAULT_CONFIG.copy()
     command_queue.append(dict(CONFIG))
     run_commands()
-    last_data = {'OD': DATA.get('OD', ['NaN'] * 16, 'temp':DATA.get('temp', ['NaN'] * 16)}
+    last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16)}
     await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
 
 @sio.on('getcalibration', namespace = '/dpu-evolver')
