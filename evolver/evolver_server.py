@@ -70,11 +70,14 @@ async def on_command(sid, data):
     # Commands go to the front of the queue, then tell the arduinos to not use the serial port.
     s_running = True
     command_queue.insert(0, dict(config))
-    arduino_serial(False)
-    time.sleep(.2)
-    run_commands()
-    time.sleep(.2)
-    arduino_serial(True)
+    try:
+        arduino_serial(False)
+        time.sleep(.2)
+        run_commands()
+        time.sleep(.2)
+        arduino_serial(True)
+    except OSError:
+        pass
     s_running = False
 
 @sio.on('data', namespace = '/dpu-evolver')
@@ -83,8 +86,17 @@ async def on_data(sid, data):
     CONFIG = DEFAULT_CONFIG.copy()
     command_queue.append(dict(CONFIG))
     run_commands()
-    last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16), 'ip': evolver_ip}
-    await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
+    finished = False
+    try_count = 0
+    while not finished:
+        try_count += 1
+        CONFIG = DEFAULT_CONFIG.copy()
+        command_queue.append(dict(CONFIG))
+        run_commands()
+        if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp') or try_count > 5:
+            last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16), 'ip': evolver_ip}
+            await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
+            finished = True
 
 # TODO: Remove redundant function
 @sio.on('pingdata', namespace = '/dpu-evolver')
