@@ -28,6 +28,7 @@ running = False
 connected = False
 serial_available = True
 s_running = False
+evolver_ip = None
 sio = socketio.AsyncServer(async_handlers=True)
 
 @sio.on('connect', namespace = '/dpu-evolver')
@@ -78,11 +79,11 @@ async def on_command(sid, data):
 
 @sio.on('data', namespace = '/dpu-evolver')
 async def on_data(sid, data):
-    global CONFIG, last_data, DEFAULT_CONFIG, command_queue
+    global CONFIG, last_data, DEFAULT_CONFIG, command_queue, evolver_ip
     CONFIG = DEFAULT_CONFIG.copy()
     command_queue.append(dict(CONFIG))
     run_commands()
-    last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16)}
+    last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16), 'ip': evolver_ip}
     await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
 
 # TODO: Remove redundant function
@@ -92,7 +93,7 @@ async def on_pingdata(sid, data):
     CONFIG = DEFAULT_CONFIG.copy()
     command_queue.append(dict(CONFIG))
     run_commands()
-    last_data = {'OD': DATA['OD'], 'temp':DATA['temp']}
+    last_data = {'OD': DATA.get('OD', ['NaN'] * 16, 'temp':DATA.get('temp', ['NaN'] * 16)}
     await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
 
 @sio.on('getcalibration', namespace = '/dpu-evolver')
@@ -205,9 +206,9 @@ def data_from_arduino(key, header, ending):
             dataList = [int(s) for s in received[4:-4].split(',')]
             DATA[key] = dataList
         else:
-            DATA[key] = 'NaN'
+            DATA[key] = ['NaN'] * 16
     except (TypeError, ValueError, serial.serialutil.SerialException) as e:
-        DATA[key] = 'NaN'
+        DATA[key] = ['NaN'] * 16
     if serial_available:
         try:
             SERIAL.close()
@@ -266,6 +267,10 @@ def attach(app):
 def is_connected():
     global connected
     return connected
+
+def set_ip(ip):
+    global evolver_ip
+    evolver_ip = ip
 
 async def broadcast():
     global last_data, last_time, CONFIG, DEFAULT_CONFIG, command_queue, DATA, s_running, connected

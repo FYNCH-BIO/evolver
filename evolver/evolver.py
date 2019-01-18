@@ -7,6 +7,7 @@ from threading import Thread
 import socket
 import evolver_server
 import os
+import serial
 
 
 def start_background_loop(loop):
