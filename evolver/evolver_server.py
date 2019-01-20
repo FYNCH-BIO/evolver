@@ -28,6 +28,7 @@ running = False
 connected = False
 serial_available = True
 s_running = False
+evolver_ip = None
 sio = socketio.AsyncServer(async_handlers=True)
 
 @sio.on('connect', namespace = '/dpu-evolver')
@@ -69,21 +70,33 @@ async def on_command(sid, data):
     # Commands go to the front of the queue, then tell the arduinos to not use the serial port.
     s_running = True
     command_queue.insert(0, dict(config))
-    arduino_serial(False)
-    time.sleep(.2)
-    run_commands()
-    time.sleep(.2)
-    arduino_serial(True)
+    try:
+        arduino_serial(False)
+        time.sleep(.2)
+        run_commands()
+        time.sleep(.2)
+        arduino_serial(True)
+    except OSError:
+        pass
     s_running = False
 
 @sio.on('data', namespace = '/dpu-evolver')
 async def on_data(sid, data):
-    global CONFIG, last_data, DEFAULT_CONFIG, command_queue
+    global CONFIG, last_data, DEFAULT_CONFIG, command_queue, evolver_ip
     CONFIG = DEFAULT_CONFIG.copy()
     command_queue.append(dict(CONFIG))
     run_commands()
-    last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16)}
-    await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
+    finished = False
+    try_count = 0
+    while not finished:
+        try_count += 1
+        CONFIG = DEFAULT_CONFIG.copy()
+        command_queue.append(dict(CONFIG))
+        run_commands()
+        if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp') or try_count > 5:
+            last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16), 'ip': evolver_ip}
+            await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
+            finished = True
 
 @sio.on('pingdata', namespace = '/dpu-evolver')
 async def on_pingdata(sid, data):
@@ -92,7 +105,7 @@ async def on_pingdata(sid, data):
     command_queue.append(dict(CONFIG))
     await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
     run_commands()
-    last_data = {'OD': DATA.get('OD', ['NaN'] * 16, 'temp':DATA.get('temp', ['NaN] * 16)}
+    last_data = {'OD': DATA.get('OD', ['NaN'] * 16, 'temp':DATA.get('temp',['NaN'] * 16)}
 
 @sio.on('getcalibration', namespace = '/dpu-evolver')
 async def on_getcalibration(sid, data):
@@ -204,9 +217,9 @@ def data_from_arduino(key, header, ending):
             dataList = [int(s) for s in received[4:-4].split(',')]
             DATA[key] = dataList
         else:
-            DATA[key] = 'NaN'
+            DATA[key] = ['NaN'] * 16
     except (TypeError, ValueError, serial.serialutil.SerialException) as e:
-        DATA[key] = 'NaN'
+        DATA[key] = ['NaN'] * 16
     if serial_available:
         try:
             SERIAL.close()
@@ -265,6 +278,10 @@ def attach(app):
 def is_connected():
     global connected
     return connected
+
+def set_ip(ip):
+    global evolver_ip
+    evolver_ip = ip
 
 async def broadcast():
     global last_data, last_time, CONFIG, DEFAULT_CONFIG, command_queue, DATA, s_running, connected
