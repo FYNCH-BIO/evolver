@@ -84,13 +84,15 @@ async def on_command(sid, data):
 async def on_data(sid, data):
     global CONFIG, last_data, DEFAULT_CONFIG, command_queue, evolver_ip
     CONFIG = DEFAULT_CONFIG.copy()
-    command_queue.append(dict(CONFIG))
-    run_commands()
     finished = False
     try_count = 0
+
+    if 'power' in data:
+        for i,vial_power in enumerate(data['power']):
+            CONFIG['OD'][i] = vial_power
+
     while not finished:
         try_count += 1
-        CONFIG = DEFAULT_CONFIG.copy()
         command_queue.append(dict(CONFIG))
         run_commands()
         if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp') or try_count > 5:
@@ -102,6 +104,9 @@ async def on_data(sid, data):
 async def on_pingdata(sid, data):
     global last_data, CONFIG, DEFAULT_CONFIG, command_queue
     CONFIG = DEFAULT_CONFIG.copy()
+    if 'power' in data:
+        for i,vial_power in enumerate(data['power']):
+            CONFIG['OD'][i] = vial_power
     command_queue.append(dict(CONFIG))
     await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
     run_commands()
