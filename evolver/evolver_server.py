@@ -119,7 +119,37 @@ async def on_getcalibration(sid, data):
 
 @sio.on('loadcalibration', namespace = '/dpu-evolver')
 async def on_loadcalibration(sid, data):
-    pass
+    location = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+    with open(os.path.join(location, 'test_device.json'), 'w') as f:
+        f.write(json.dumps(data))
+
+@sio.on('setcalibrationraw', namespace = '/dpu-evolver')
+async def on_setcalibrationraw(sid, data):
+    location = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+    calibration_path = os.path.join(location, 'calibrations')
+    if not os.path.isdir(calibration_path)):
+        os.mkdir(calibration_path)
+
+    current_time = time.time()
+    with open(os.path.join(calibration_path, 'od_cal_' + current_time + '.json'), 'w') as f:
+        f.write(json.dumps(data))
+
+@sio.on('getcalibrationraw', namespace = '/dpu-evolver')
+async def on_getcalibrationraw(sid, data):
+    location = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+    calibration_path = os.path.join(location, 'calibrations')
+    last_calibration_time = 0
+    last_calibration_file = None
+
+    if os.path.isdir(calibration_path):
+        calibration_files = os.listdir(calibration_path)
+        for calibration_file in calibration_files:
+            calibration_time = int(calibration_file.split('_')[2].split('.')[0])
+            if calibration_time > last_calibration_time:
+                last_calibration_time = calibration_time
+                last_calibration_file = calibration_file
+        with open(os.path.join(calibration_path, calibration_file), 'r') as f:
+            await sio.emit('calibrationraw', json.loads(f.read()), namespace = '/dpu-evolver')
 
 def load_calibration():
     location = os.path.realpath(os.path.join(os.getcwd(),
