@@ -127,7 +127,7 @@ async def on_loadcalibration(sid, data):
 async def on_setcalibrationraw(sid, data):
     location = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
     calibration_path = os.path.join(location, 'calibrations')
-    if not os.path.isdir(calibration_path)):
+    if not os.path.isdir(calibration_path):
         os.mkdir(calibration_path)
 
     current_time = time.time()
