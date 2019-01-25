@@ -130,8 +130,8 @@ async def on_setcalibrationraw(sid, data):
     if not os.path.isdir(calibration_path):
         os.mkdir(calibration_path)
 
-    current_time = time.time()
-    with open(os.path.join(calibration_path, 'od_cal_' + current_time + '.json'), 'w') as f:
+    current_time = int(time.time())
+    with open(os.path.join(calibration_path, 'od_cal_' + str(current_time) + '.json'), 'w') as f:
         f.write(json.dumps(data))
 
 @sio.on('getcalibrationraw', namespace = '/dpu-evolver')
