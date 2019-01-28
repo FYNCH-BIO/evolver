@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 from threading import Thread
+import copy
 
 SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 3)
 SERIAL.flushInput()
@@ -83,19 +84,19 @@ async def on_command(sid, data):
 
 @sio.on('data', namespace = '/dpu-evolver')
 async def on_data(sid, data):
-    global CONFIG, last_data, DEFAULT_CONFIG, command_queue, evolver_ip, stopread
+    global last_data, DEFAULT_CONFIG, command_queue, evolver_ip, stopread
     stopread = False
-    CONFIG = DEFAULT_CONFIG.copy()
+    config = copy.deepcopy(DEFAULT_CONFIG)
     finished = False
     try_count = 0
 
     if 'power' in data:
         for i,vial_power in enumerate(data['power']):
-            CONFIG['OD'][i] = vial_power
+            config['OD'][i] = vial_power
 
     while not finished:
         try_count += 1
-        command_queue.append(dict(CONFIG))
+        command_queue.append(dict(config))
         run_commands()
         if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp') or try_count > 5:
             last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16), 'ip': evolver_ip}
@@ -105,13 +106,13 @@ async def on_data(sid, data):
 
 @sio.on('pingdata', namespace = '/dpu-evolver')
 async def on_pingdata(sid, data):
-    global last_data, CONFIG, DEFAULT_CONFIG, command_queue, stopread
-    CONFIG = DEFAULT_CONFIG.copy()
+    global last_data, DEFAULT_CONFIG, command_queue, stopread
+    config = copy.deepcopy(DEFAULT_CONFIG)
     stopread = False
     if 'power' in data:
         for i,vial_power in enumerate(data['power']):
-            CONFIG['OD'][i] = vial_power
-    command_queue.append(dict(CONFIG))
+            config['OD'][i] = vial_power
+    command_queue.append(dict(config))
     if not stopread:
         await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
     run_commands()
@@ -168,7 +169,7 @@ def load_calibration():
         return json.loads(f.read())
 
 def run_commands():
-    global command_queue, CONFIG, running
+    global command_queue, running
     running = True
     command_queue = remove_duplicate_commands(command_queue)
     while len(command_queue) > 0:
@@ -234,7 +235,7 @@ def remove_duplicate_commands(command_queue):
 def config_to_arduino(key, header, ending, method, config):
     global SERIAL, DEFAULT_CONFIG, DATA, s_running
     if not config:
-        config = DEFAULT_CONFIG.copy()
+        config = copy.deepcopy(DEFAULT_CONFIG)
     if 'temp' in config:
         DEFAULT_CONFIG['temp'] = config['temp']
     myList = config.get(key)
@@ -291,7 +292,7 @@ def push_arduino(config):
 
 def arduino_serial(can_use_serial):
     global SERIAL, DEFAULT_CONFIG, PARAM, ENDING_SEND, serial_available
-    cfg = DEFAULT_CONFIG.copy()
+    cfg = copy.deepcopy(DEFAULT_CONFIG)
     serial_available = can_use_serial
     # Reset the serial connection
     if SERIAL.isOpen():
@@ -329,13 +330,13 @@ def set_ip(ip):
     evolver_ip = ip
 
 async def broadcast():
-    global last_data, last_time, CONFIG, DEFAULT_CONFIG, command_queue, DATA, s_running, connected
+    global last_data, last_time, DEFAULT_CONFIG, command_queue, DATA, s_running, connected
     current_time = time.time()
     if s_running or not connected:
         return
 
-    CONFIG = DEFAULT_CONFIG.copy()
-    command_queue.append(dict(CONFIG))
+    config = copy.deepcopy(DEFAULT_CONFIG)
+    command_queue.append(dict(config))
     run_commands()
     if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp'):
         last_data = {'OD': DATA['OD'], 'temp':DATA['temp']}
