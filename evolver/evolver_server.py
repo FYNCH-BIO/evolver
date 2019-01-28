@@ -29,6 +29,7 @@ connected = False
 serial_available = True
 s_running = False
 evolver_ip = None
+stopread = False
 sio = socketio.AsyncServer(async_handlers=True)
 
 @sio.on('connect', namespace = '/dpu-evolver')
@@ -82,7 +83,8 @@ async def on_command(sid, data):
 
 @sio.on('data', namespace = '/dpu-evolver')
 async def on_data(sid, data):
-    global CONFIG, last_data, DEFAULT_CONFIG, command_queue, evolver_ip
+    global CONFIG, last_data, DEFAULT_CONFIG, command_queue, evolver_ip, stopread
+    stopread = False
     CONFIG = DEFAULT_CONFIG.copy()
     finished = False
     try_count = 0
@@ -97,18 +99,21 @@ async def on_data(sid, data):
         run_commands()
         if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp') or try_count > 5:
             last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16), 'ip': evolver_ip}
-            await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
+            if not stopread:
+                await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
             finished = True
 
 @sio.on('pingdata', namespace = '/dpu-evolver')
 async def on_pingdata(sid, data):
-    global last_data, CONFIG, DEFAULT_CONFIG, command_queue
+    global last_data, CONFIG, DEFAULT_CONFIG, command_queue, stopread
     CONFIG = DEFAULT_CONFIG.copy()
+    stopread = False
     if 'power' in data:
         for i,vial_power in enumerate(data['power']):
             CONFIG['OD'][i] = vial_power
     command_queue.append(dict(CONFIG))
-    await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
+    if not stopread:
+        await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
     run_commands()
     last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp',['NaN'] * 16)}
 
@@ -150,6 +155,11 @@ async def on_getcalibrationraw(sid, data):
                 last_calibration_file = calibration_file
         with open(os.path.join(calibration_path, calibration_file), 'r') as f:
             await sio.emit('calibrationraw', json.loads(f.read()), namespace = '/dpu-evolver')
+
+@sio.on('stopread', namespace = '/dpu-evolver')
+async def on_stopread(sid, data):
+    global stopread
+    stopread = True
 
 def load_calibration():
     location = os.path.realpath(os.path.join(os.getcwd(),
