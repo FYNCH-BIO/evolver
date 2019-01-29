@@ -29,6 +29,7 @@ running = False
 connected = False
 serial_available = True
 s_running = False
+b_running = False
 evolver_ip = None
 stopread = False
 sio = socketio.AsyncServer(async_handlers=True)
@@ -84,7 +85,7 @@ async def on_command(sid, data):
 
 @sio.on('data', namespace = '/dpu-evolver')
 async def on_data(sid, data):
-    global last_data, DEFAULT_CONFIG, command_queue, evolver_ip, stopread
+    global last_data, DEFAULT_CONFIG, command_queue, evolver_ip, stopread, s_runing
     stopread = False
     config = copy.deepcopy(DEFAULT_CONFIG)
     finished = False
@@ -94,15 +95,20 @@ async def on_data(sid, data):
         for i,vial_power in enumerate(data['power']):
             config['OD'][i] = vial_power
 
+    s_running = True
+    while b_running:
+        pass
+
     while not finished:
         try_count += 1
-        command_queue.append(dict(config))
+        command_queue.insert(0,(dict(config)))
         run_commands()
         if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp') or try_count > 5:
             last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16), 'ip': evolver_ip}
             if not stopread:
                 await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
             finished = True
+    s_running = False
 
 @sio.on('pingdata', namespace = '/dpu-evolver')
 async def on_pingdata(sid, data):
@@ -154,7 +160,7 @@ async def on_getcalibrationraw(sid, data):
             if calibration_time > last_calibration_time:
                 last_calibration_time = calibration_time
                 last_calibration_file = calibration_file
-        with open(os.path.join(calibration_path, calibration_file), 'r') as f:
+        with open(os.path.join(calibration_path, last_calibration_file), 'r') as f:
             await sio.emit('calibrationraw', json.loads(f.read()), namespace = '/dpu-evolver')
 
 @sio.on('stopread', namespace = '/dpu-evolver')
@@ -330,15 +336,17 @@ def set_ip(ip):
     evolver_ip = ip
 
 async def broadcast():
-    global last_data, last_time, DEFAULT_CONFIG, command_queue, DATA, s_running, connected
+    global last_data, last_time, DEFAULT_CONFIG, command_queue, DATA, s_running, connected, b_running
     current_time = time.time()
     if s_running or not connected:
         return
 
     config = copy.deepcopy(DEFAULT_CONFIG)
+    b_running = True
     command_queue.append(dict(config))
     run_commands()
     if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp'):
         last_data = {'OD': DATA['OD'], 'temp':DATA['temp']}
         last_time = time.time()
         await sio.emit('databroadcast', last_data, namespace='/dpu-evolver')
+    b_running = False
