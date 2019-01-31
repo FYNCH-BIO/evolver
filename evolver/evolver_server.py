@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 from threading import Thread
+import copy
 
 SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 3)
 SERIAL.flushInput()
@@ -17,8 +18,16 @@ PARAM = {}
 DATA = {}
 CONFIG = {}
 
+OD_FILENAME = 'OD_cal.txt'
+TEMP_FILENAME = 'temp_cal.txt'
+CALIBRATIONS_DIR = 'calibrations'
+OD_CAL_DIR = 'od'
+TEMP_CAL_DIR = 'temp'
+
 ENDING_SEND = '!'
 ENDING_RETURN = 'end'
+
+LOCATION = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 command_queue = []
 serial_queue = []
@@ -28,7 +37,9 @@ running = False
 connected = False
 serial_available = True
 s_running = False
+b_running = False
 evolver_ip = None
+stopread = False
 sio = socketio.AsyncServer(async_handlers=True)
 
 @sio.on('connect', namespace = '/dpu-evolver')
@@ -82,53 +93,113 @@ async def on_command(sid, data):
 
 @sio.on('data', namespace = '/dpu-evolver')
 async def on_data(sid, data):
-    global CONFIG, last_data, DEFAULT_CONFIG, command_queue, evolver_ip
-    CONFIG = DEFAULT_CONFIG.copy()
+    global last_data, DEFAULT_CONFIG, command_queue, evolver_ip, stopread, s_runing
+    stopread = False
+    config = copy.deepcopy(DEFAULT_CONFIG)
     finished = False
     try_count = 0
 
     if 'power' in data:
         for i,vial_power in enumerate(data['power']):
-            CONFIG['OD'][i] = vial_power
+            config['OD'][i] = vial_power
+
+    s_running = True
+    while b_running:
+        pass
 
     while not finished:
         try_count += 1
-        command_queue.append(dict(CONFIG))
+        command_queue.insert(0,(dict(config)))
         run_commands()
         if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp') or try_count > 5:
             last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16), 'ip': evolver_ip}
-            await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
+            if not stopread:
+                await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
             finished = True
+    s_running = False
 
 @sio.on('pingdata', namespace = '/dpu-evolver')
 async def on_pingdata(sid, data):
-    global last_data, CONFIG, DEFAULT_CONFIG, command_queue
-    CONFIG = DEFAULT_CONFIG.copy()
+    global last_data, DEFAULT_CONFIG, command_queue, stopread
+    config = copy.deepcopy(DEFAULT_CONFIG)
+    stopread = False
     if 'power' in data:
         for i,vial_power in enumerate(data['power']):
-            CONFIG['OD'][i] = vial_power
-    command_queue.append(dict(CONFIG))
-    await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
+            config['OD'][i] = vial_power
+    command_queue.append(dict(config))
+    if not stopread:
+        await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
     run_commands()
     last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp',['NaN'] * 16)}
 
-@sio.on('getcalibration', namespace = '/dpu-evolver')
-async def on_getcalibration(sid, data):
-    cal = load_calibration()
-    await sio.emit('calibration', cal, namespace='/dpu-evolver')
+@sio.on('getcalibrationod', namespace = '/dpu-evolver')
+async def on_getcalibrationod(sid, data):
+    with open(os.path.join(LOCATION, OD_FILENAME), 'r') as f:
+       cal = f.read()
+    await sio.emit('calibrationod', cal, namespace='/dpu-evolver')
 
-@sio.on('loadcalibration', namespace = '/dpu-evolver')
-async def on_loadcalibration(sid, data):
-    pass
+@sio.on('getcalibrationtemp', namespace = '/dpu-evolver')
+async def on_getcalibrationtemp(sid, data):
+    with open(os.path.join(LOCATION, TEMP_FILENAME), 'r') as f:
+       cal = f.read()
+    await sio.emit('calibrationtemp', cal, namespace='/dpu-evolver')
+
+@sio.on('setcalibrationod', namespace = '/dpu-evolver')
+async def on_setcalibrationod(sid, data):
+    od_file = os.path.join(LOCATION, OD_FILENAME)
+    parameters = data['parameters']
+    reformatted_parameters = [[],[],[],[]]
+    for vial in parameters:
+        for i, param in enumerate(vial):
+            reformatted_parameters[i].append(param)
+            
+    with open(od_file, 'w') as f:
+        for param in reformatted_parameters:
+            f.write(','.join(map(str,param)) + '\n')
+
+@sio.on('setcalibrationtemp', namespace = '/dpu-evolver')
+async def on_setcalibrationtemp(sid, data):
+    temp_file = os.path.join(LOCATION, TEMP_FILENAME)
+    with open(temp_file, 'w') as f:
+        f.write(json.dumps(data['parameters']))
+
+@sio.on('setcalibrationrawod', namespace = '/dpu-evolver')
+async def on_setcalibrationraw(sid, data):
+    calibration_path = os.path.join(LOCATION, CALIBRATIONS_DIR, OD_CAL_DIR) 
+    print('saving raw cal')
+    if not os.path.isdir(calibration_path):
+        os.mkdir(calibration_path)
+
+    with open(os.path.join(calibration_path, data['filename'] + '.json'), 'w') as f:
+        f.write(json.dumps(data))
+
+@sio.on('getcalibrationrawod', namespace = '/dpu-evolver')
+async def on_getcalibrationraw(sid, data):
+    calibration_path = os.path.join(LOCATION, CALIBRATIONS_DIR, OD_CAL_DIR)
+    with open(os.path.join(calibration_path, data['filename']), 'r') as f:
+        await sio.emit('calibrationrawod', json.loads(f.read()), namespace = '/dpu-evolver')
+
+@sio.on('getcalibrationfilenamesod', namespace = '/dpu-evolver')
+async def on_getcalibrationfilenamesod(sid, data):
+    files = os.listdir(os.path.join(LOCATION, CALIBRATIONS_DIR, OD_CAL_DIR))
+    await sio.emit('odfilenames', files, namespace = '/dpu-evolver')
+
+@sio.on('getcalibrationfilenamestemp', namespace = '/dpu-evolver')
+async def on_getcalibrationfilenamesod(sid, data):
+    files = os.listdir(os.path.join(LOCATION, CALIBRATIONS_DIR, TEMP_DIR))
+    await sio.emit('tempfilenames', files, namespace = '/dpu-evolver')
+
+@sio.on('stopread', namespace = '/dpu-evolver')
+async def on_stopread(sid, data):
+    global stopread
+    stopread = True
 
 def load_calibration():
-    location = os.path.realpath(os.path.join(os.getcwd(),
-        os.path.dirname(__file__)))
-    with open(os.path.join(location, 'test_device.json'), 'r') as f:
+    with open(os.path.join(LOCATION, 'test_device.json'), 'r') as f:
         return json.loads(f.read())
 
 def run_commands():
-    global command_queue, CONFIG, running
+    global command_queue, running
     running = True
     command_queue = remove_duplicate_commands(command_queue)
     while len(command_queue) > 0:
@@ -194,7 +265,7 @@ def remove_duplicate_commands(command_queue):
 def config_to_arduino(key, header, ending, method, config):
     global SERIAL, DEFAULT_CONFIG, DATA, s_running
     if not config:
-        config = DEFAULT_CONFIG.copy()
+        config = copy.deepcopy(DEFAULT_CONFIG)
     if 'temp' in config:
         DEFAULT_CONFIG['temp'] = config['temp']
     myList = config.get(key)
@@ -251,7 +322,7 @@ def push_arduino(config):
 
 def arduino_serial(can_use_serial):
     global SERIAL, DEFAULT_CONFIG, PARAM, ENDING_SEND, serial_available
-    cfg = DEFAULT_CONFIG.copy()
+    cfg = copy.deepcopy(DEFAULT_CONFIG)
     serial_available = can_use_serial
     # Reset the serial connection
     if SERIAL.isOpen():
@@ -289,15 +360,17 @@ def set_ip(ip):
     evolver_ip = ip
 
 async def broadcast():
-    global last_data, last_time, CONFIG, DEFAULT_CONFIG, command_queue, DATA, s_running, connected
+    global last_data, last_time, DEFAULT_CONFIG, command_queue, DATA, s_running, connected, b_running
     current_time = time.time()
     if s_running or not connected:
         return
 
-    CONFIG = DEFAULT_CONFIG.copy()
-    command_queue.append(dict(CONFIG))
+    config = copy.deepcopy(DEFAULT_CONFIG)
+    b_running = True
+    command_queue.append(dict(config))
     run_commands()
     if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp'):
         last_data = {'OD': DATA['OD'], 'temp':DATA['temp']}
         last_time = time.time()
         await sio.emit('databroadcast', last_data, namespace='/dpu-evolver')
+    b_running = False
