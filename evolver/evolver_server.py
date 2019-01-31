@@ -18,8 +18,16 @@ PARAM = {}
 DATA = {}
 CONFIG = {}
 
+OD_FILENAME = 'OD_cal.txt'
+TEMP_FILENAME = 'temp_cal.txt'
+CALIBRATIONS_DIR = 'calibrations'
+OD_CAL_DIR = 'od'
+TEMP_CAL_DIR = 'temp'
+
 ENDING_SEND = '!'
 ENDING_RETURN = 'end'
+
+LOCATION = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 
 command_queue = []
 serial_queue = []
@@ -124,44 +132,61 @@ async def on_pingdata(sid, data):
     run_commands()
     last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp',['NaN'] * 16)}
 
-@sio.on('getcalibration', namespace = '/dpu-evolver')
-async def on_getcalibration(sid, data):
-    cal = load_calibration()
-    await sio.emit('calibration', cal, namespace='/dpu-evolver')
+@sio.on('getcalibrationod', namespace = '/dpu-evolver')
+async def on_getcalibrationod(sid, data):
+    with open(os.path.join(LOCATION, OD_FILENAME), 'r') as f:
+       cal = f.read()
+    await sio.emit('calibrationod', cal, namespace='/dpu-evolver')
 
-@sio.on('loadcalibration', namespace = '/dpu-evolver')
-async def on_loadcalibration(sid, data):
-    location = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
-    with open(os.path.join(location, 'test_device.json'), 'w') as f:
-        f.write(json.dumps(data))
+@sio.on('getcalibrationtemp', namespace = '/dpu-evolver')
+async def on_getcalibrationtemp(sid, data):
+    with open(os.path.join(LOCATION, TEMP_FILENAME), 'r') as f:
+       cal = f.read()
+    await sio.emit('calibrationtemp', cal, namespace='/dpu-evolver')
 
-@sio.on('setcalibrationraw', namespace = '/dpu-evolver')
+@sio.on('setcalibrationod', namespace = '/dpu-evolver')
+async def on_setcalibrationod(sid, data):
+    od_file = os.path.join(LOCATION, OD_FILENAME)
+    parameters = data['parameters']
+    reformatted_parameters = [[],[],[],[]]
+    for vial in parameters:
+        for i, param in enumerate(vial):
+            reformatted_parameters[i].append(param)
+            
+    with open(od_file, 'w') as f:
+        for param in reformatted_parameters:
+            f.write(','.join(map(str,param)) + '\n')
+
+@sio.on('setcalibrationtemp', namespace = '/dpu-evolver')
+async def on_setcalibrationtemp(sid, data):
+    temp_file = os.path.join(LOCATION, TEMP_FILENAME)
+    with open(temp_file, 'w') as f:
+        f.write(json.dumps(data['parameters']))
+
+@sio.on('setcalibrationrawod', namespace = '/dpu-evolver')
 async def on_setcalibrationraw(sid, data):
-    location = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
-    calibration_path = os.path.join(location, 'calibrations')
+    calibration_path = os.path.join(LOCATION, CALIBRATIONS_DIR) 
     if not os.path.isdir(calibration_path):
         os.mkdir(calibration_path)
 
-    current_time = int(time.time())
-    with open(os.path.join(calibration_path, 'od_cal_' + str(current_time) + '.json'), 'w') as f:
-        f.write(json.dumps(data))
+    with open(os.path.join(calibration_path, data['filename'], '.json'), 'w') as f:
+        f.write(json.dumps(data['rawdata']))
 
-@sio.on('getcalibrationraw', namespace = '/dpu-evolver')
+@sio.on('getcalibrationrawod', namespace = '/dpu-evolver')
 async def on_getcalibrationraw(sid, data):
-    location = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
-    calibration_path = os.path.join(location, 'calibrations')
-    last_calibration_time = 0
-    last_calibration_file = None
+    calibration_path = os.path.join(LOCATION, CALIBRATIONS_DIR, OD_CAL_DIR)
+    with open(os.path.join(calibration_path, data['filename']), 'r') as f:
+        await sio.emit('calibrationrawod', json.loads(f.read()), namespace = '/dpu-evolver')
 
-    if os.path.isdir(calibration_path):
-        calibration_files = os.listdir(calibration_path)
-        for calibration_file in calibration_files:
-            calibration_time = int(calibration_file.split('_')[2].split('.')[0])
-            if calibration_time > last_calibration_time:
-                last_calibration_time = calibration_time
-                last_calibration_file = calibration_file
-        with open(os.path.join(calibration_path, last_calibration_file), 'r') as f:
-            await sio.emit('calibrationraw', json.loads(f.read()), namespace = '/dpu-evolver')
+@sio.on('getcalibrationfilenamesod', namespace = '/dpu-evolver')
+async def on_getcalibrationfilenamesod(sid, data):
+    files = os.listdir(os.path.join(LOCATION, CALIBRATIONS_DIR, OD_CAL_DIR))
+    await sio.emit('odfilenames', files, namespace = '/dpu-evolver')
+
+@sio.on('getcalibrationfilenamestemp', namespace = '/dpu-evolver')
+async def on_getcalibrationfilenamesod(sid, data):
+    files = os.listdir(os.path.join(LOCATION, CALIBRATIONS_DIR, TEMP_DIR))
+    await sio.emit('tempfilenames', files, namespace = '/dpu-evolver')
 
 @sio.on('stopread', namespace = '/dpu-evolver')
 async def on_stopread(sid, data):
@@ -169,9 +194,7 @@ async def on_stopread(sid, data):
     stopread = True
 
 def load_calibration():
-    location = os.path.realpath(os.path.join(os.getcwd(),
-        os.path.dirname(__file__)))
-    with open(os.path.join(location, 'test_device.json'), 'r') as f:
+    with open(os.path.join(LOCATION, 'test_device.json'), 'r') as f:
         return json.loads(f.read())
 
 def run_commands():
