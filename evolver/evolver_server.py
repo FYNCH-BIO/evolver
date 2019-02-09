@@ -1,5 +1,5 @@
 import socketio
- import serial
+import serial
 import evolver
 import time
 import asyncio
@@ -138,7 +138,8 @@ async def on_getcalibrationod(sid, data):
     with open('calibration.json') as f:
        CAL_CONFIG = json.load(f)
        OD_FILENAME = CAL_CONFIG["activeCalibration"]["od"]["filename"]
-    with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_FILENAME), 'r') as f:
+    await sio.emit('activecalibrationod', OD_FILENAME, namespace='/dpu-evolver')
+    with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR, OD_FILENAME), 'r') as f:
        cal = f.read()
     await sio.emit('calibrationod', cal, namespace='/dpu-evolver')
 
@@ -147,7 +148,8 @@ async def on_getcalibrationtemp(sid, data):
     with open('calibration.json') as f:
        CAL_CONFIG = json.load(f)
        TEMP_FILENAME = CAL_CONFIG["activeCalibration"]["temp"]["filename"]
-    with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_FILENAME), 'r') as f:
+    await sio.emit('activecalibrationtemp', TEMP_FILENAME, namespace='/dpu-evolver')
+    with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, TEMP_FILENAME), 'r') as f:
        cal = f.read()
     await sio.emit('calibrationtemp', cal, namespace='/dpu-evolver')
 
@@ -155,7 +157,7 @@ async def on_getcalibrationtemp(sid, data):
 async def on_setcalibrationod(sid, data):
     #ADD OD_FILENAME from returned parameter on data
     OD_FILENAME = 'OD_cal.txt'
-    od_file = os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_FILENAME)
+    od_file = os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR, OD_FILENAME)
     parameters = reformat_parameters(data['parameters'])
     with open(od_file, 'w') as f:
         for param in parameters:
@@ -165,7 +167,7 @@ async def on_setcalibrationod(sid, data):
 async def on_setcalibrationtemp(sid, data):
     #ADD TEMP_FILENAME from returned parameter on data
     TEMP_FILENAME = 'temp_cal.txt'
-    temp_file = os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_FILENAME)
+    temp_file = os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, TEMP_FILENAME)
     parameters = reformat_parameters(data['parameters'], od = False)
     with open(temp_file, 'w') as f:
         for param in parameters:
@@ -223,6 +225,29 @@ async def on_getfittedcalibrationfilenamesod(sid, data):
     files = os.listdir(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR))
     await sio.emit('tempfittedfilenames', files, namespace = '/dpu-evolver')
 
+@sio.on('setActiveODCal', namespace = '/dpu-evolver')
+async def on_setActiveODCal(sid, data):
+    with open('calibration.json') as f:
+       CAL_CONFIG = json.load(f)
+       CAL_CONFIG["activeCalibration"]["od"]["filename"] = data['filename']
+    with open(os.path.join(LOCATION, 'calibration.json'), 'w') as f:
+        f.write(json.dumps(CAL_CONFIG))
+    await sio.emit('activecalibrationod', data['filename'], namespace='/dpu-evolver')
+    with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR, data['filename']), 'r') as f:
+       cal = f.read()
+    await sio.emit('calibrationod', cal, namespace='/dpu-evolver')
+
+@sio.on('setActiveTempCal', namespace = '/dpu-evolver')
+async def on_setActiveTempCal(sid, data):
+    with open('calibration.json') as f:
+       CAL_CONFIG = json.load(f)
+       CAL_CONFIG["activeCalibration"]["temp"]["filename"] = data['filename']
+    with open(os.path.join(LOCATION, 'calibration.json'), 'w') as f:
+        f.write(json.dumps(CAL_CONFIG))    
+    await sio.emit('activecalibrationtemp', data['filename'], namespace='/dpu-evolver')
+    with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, data['filename']), 'r') as f:
+       cal = f.read()
+    await sio.emit('calibrationtemp', cal, namespace='/dpu-evolver')
 
 @sio.on('stopread', namespace = '/dpu-evolver')
 async def on_stopread(sid, data):
