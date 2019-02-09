@@ -22,13 +22,14 @@
         "generatedBy": "Zachary Heins"
       }
       ],
-    "temp": {
+    "temp": [
       {
         "filename":"TEMP_20190201.txt",
         "measuredWith": "Fisherbrand™ Traceable™ Hi-Accuracy Refrigerator Thermomete",
         "dateGenerated": "2019-02-10T04:33:22+0000",
         "generatedBy": "Zachary Heins"
       }
+      ]
 
     }
   }
