@@ -12,8 +12,8 @@ SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 3)
 SERIAL.flushInput()
 SERIAL.close()
 
-DEFAULT_PARAMS = {"OD":["we", "turb", "all"], "temp":["xr", "temp","all"], "stir": ["zv", "stir", "all"], "pump": ["st", "pump", "all"]}
-DEFAULT_CONFIG = {'OD':[2125] * 16, 'temp':['NaN'] * 16}
+DEFAULT_PARAMS = {"od":["we", "turb", "all"], "temp":["xr", "temp","all"], "stir": ["zv", "stir", "all"], "pump": ["st", "pump", "all"]}
+DEFAULT_CONFIG = {'od':[2125] * 16, 'temp':['NaN'] * 16}
 PARAM = {}
 DATA = {}
 CONFIG = {}
@@ -102,7 +102,7 @@ async def on_data(sid, data):
 
     if 'power' in data:
         for i,vial_power in enumerate(data['power']):
-            config['OD'][i] = vial_power
+            config['od'][i] = vial_power
 
     s_running = True
     while b_running:
@@ -112,8 +112,8 @@ async def on_data(sid, data):
         try_count += 1
         command_queue.insert(0,(dict(config)))
         run_commands()
-        if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp') or try_count > 5:
-            last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16), 'ip': evolver_ip}
+        if 'od' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('od') and 'NaN' not in DATA.get('temp') or try_count > 5:
+            last_data = {'od': DATA.get('od', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16), 'ip': evolver_ip}
             if not stopread:
                 await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
             finished = True
@@ -126,16 +126,16 @@ async def on_pingdata(sid, data):
     stopread = False
     if 'power' in data:
         for i,vial_power in enumerate(data['power']):
-            config['OD'][i] = vial_power
+            config['od'][i] = vial_power
     command_queue.append(dict(config))
     if not stopread:
         await sio.emit('dataresponse', last_data, namespace='/dpu-evolver')
     run_commands()
-    last_data = {'OD': DATA.get('OD', ['NaN'] * 16), 'temp':DATA.get('temp',['NaN'] * 16)}
+    last_data = {'od': DATA.get('od', ['NaN'] * 16), 'temp':DATA.get('temp',['NaN'] * 16)}
 
 @sio.on('getcalibrationod', namespace = '/dpu-evolver')
 async def on_getcalibrationod(sid, data):
-    with open('calibration.json') as f:
+    with open(os.path.join(LOCATION, 'calibration.json')) as f:
        CAL_CONFIG = json.load(f)
        OD_FILENAME = CAL_CONFIG["activeCalibration"]["od"]["filename"]
     await sio.emit('activecalibrationod', OD_FILENAME, namespace='/dpu-evolver')
@@ -145,7 +145,7 @@ async def on_getcalibrationod(sid, data):
 
 @sio.on('getcalibrationtemp', namespace = '/dpu-evolver')
 async def on_getcalibrationtemp(sid, data):
-    with open('calibration.json') as f:
+    with open(os.path.join(LOCATION, 'calibration.json')) as f:
        CAL_CONFIG = json.load(f)
        TEMP_FILENAME = CAL_CONFIG["activeCalibration"]["temp"]["filename"]
     await sio.emit('activecalibrationtemp', TEMP_FILENAME, namespace='/dpu-evolver')
@@ -227,7 +227,7 @@ async def on_getfittedcalibrationfilenamesod(sid, data):
 
 @sio.on('setActiveODCal', namespace = '/dpu-evolver')
 async def on_setActiveODCal(sid, data):
-    with open('calibration.json') as f:
+    with open(os.path.join(LOCATION, 'calibration.json')) as f:
        CAL_CONFIG = json.load(f)
        CAL_CONFIG["activeCalibration"]["od"]["filename"] = data['filename']
     with open(os.path.join(LOCATION, 'calibration.json'), 'w') as f:
@@ -239,11 +239,11 @@ async def on_setActiveODCal(sid, data):
 
 @sio.on('setActiveTempCal', namespace = '/dpu-evolver')
 async def on_setActiveTempCal(sid, data):
-    with open('calibration.json') as f:
+    with open(os.path.join(LOCATION, 'calibration.json')) as f:
        CAL_CONFIG = json.load(f)
        CAL_CONFIG["activeCalibration"]["temp"]["filename"] = data['filename']
     with open(os.path.join(LOCATION, 'calibration.json'), 'w') as f:
-        f.write(json.dumps(CAL_CONFIG))    
+        f.write(json.dumps(CAL_CONFIG))
     await sio.emit('activecalibrationtemp', data['filename'], namespace='/dpu-evolver')
     with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, data['filename']), 'r') as f:
        cal = f.read()
@@ -439,8 +439,8 @@ async def broadcast():
     b_running = True
     command_queue.append(dict(config))
     run_commands()
-    if 'OD' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('OD') and 'NaN' not in DATA.get('temp'):
-        last_data = {'OD': DATA['OD'], 'temp':DATA['temp']}
+    if 'od' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('od') and 'NaN' not in DATA.get('temp'):
+        last_data = {'od': DATA['od'], 'temp':DATA['temp']}
         last_time = time.time()
         await sio.emit('databroadcast', last_data, namespace='/dpu-evolver')
     b_running = False
