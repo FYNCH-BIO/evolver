@@ -88,6 +88,7 @@ async def on_command(sid, data):
         run_commands()
         time.sleep(.2)
         arduino_serial(True)
+        await sio.emit('commandbroadcast', data, namespace='/dpu-evolver')
     except OSError:
         pass
     s_running = False
@@ -404,8 +405,9 @@ def arduino_serial(can_use_serial):
         if can_use_serial:
             message = "st"
         output = header + ','.join([message] + ["0"] * 15) + " " + ENDING_SEND
-        print(output)
-        SERIAL.write(bytes(output, 'UTF-8'))
+        if output is not None:
+           print(output)
+           SERIAL.write(bytes(output, 'UTF-8'))
     SERIAL.close()
 
 def define_parameters(param_json):
