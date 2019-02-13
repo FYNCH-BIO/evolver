@@ -180,9 +180,9 @@ async def on_setcalibrationrawod(sid, data):
     print('saving raw cal')
     if not os.path.isdir(calibration_path):
         os.mkdir(calibration_path)
-
     with open(os.path.join(calibration_path, data['filename']), 'w') as f:
         f.write(json.dumps(data))
+    await sio.emit('setcalibrationrawod_callback', 'success' , namespace = '/dpu-evolver')
 
 @sio.on('setcalibrationrawtemp', namespace = '/dpu-evolver')
 async def on_setcalibrationrawtemp(sid, data):
@@ -190,9 +190,9 @@ async def on_setcalibrationrawtemp(sid, data):
     print('saving raw cal')
     if not os.path.isdir(calibration_path):
         os.mkdir(calibration_path)
-
     with open(os.path.join(calibration_path, data['filename']), 'w') as f:
         f.write(json.dumps(data))
+    await sio.emit('setcalibrationrawtemp_callback', 'success', namespace = '/dpu-evolver')
 
 @sio.on('getcalibrationrawod', namespace = '/dpu-evolver')
 async def on_getcalibrationrawod(sid, data):
@@ -405,8 +405,8 @@ def arduino_serial(can_use_serial):
         if can_use_serial:
             message = "st"
         output = header + ','.join([message] + ["0"] * 15) + " " + ENDING_SEND
-        if output is not None:
-           print(output)
+        print(output)
+        if bytes(output, 'UTF-8') is not None:
            SERIAL.write(bytes(output, 'UTF-8'))
     SERIAL.close()
 
