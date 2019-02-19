@@ -29,6 +29,13 @@ ENDING_SEND = '!'
 ENDING_RETURN = 'end'
 
 LOCATION = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
+LOCATIONS = [os.path.join(LOCATION, CALIBRATIONS_DIR),
+                os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR),
+                os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR),
+                os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR),
+                os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR),
+                os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR, OD_CAL_DIR),
+                os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR, TEMP_CAL_DIR)]
 
 command_queue = []
 serial_queue = []
@@ -157,8 +164,8 @@ async def on_getcalibrationtemp(sid, data):
 @sio.on('setcalibrationod', namespace = '/dpu-evolver')
 async def on_setcalibrationod(sid, data):
     #ADD OD_FILENAME from returned parameter on data
-    OD_FILENAME = 'OD_cal.txt'
-    od_file = os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR, OD_FILENAME)
+
+    od_file = os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR, '.'.join(data['filename'].split('.')[:-1]) + '.txt')
     parameters = reformat_parameters(data['parameters'])
     with open(od_file, 'w') as f:
         for param in parameters:
@@ -167,8 +174,7 @@ async def on_setcalibrationod(sid, data):
 @sio.on('setcalibrationtemp', namespace = '/dpu-evolver')
 async def on_setcalibrationtemp(sid, data):
     #ADD TEMP_FILENAME from returned parameter on data
-    TEMP_FILENAME = 'temp_cal.txt'
-    temp_file = os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, TEMP_FILENAME)
+    temp_file = os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, '.'.join(data['filename'].split('.')[:-1]) + '.txt')
     parameters = reformat_parameters(data['parameters'], od = False)
     with open(temp_file, 'w') as f:
         for param in parameters:
@@ -178,8 +184,6 @@ async def on_setcalibrationtemp(sid, data):
 async def on_setcalibrationrawod(sid, data):
     calibration_path = os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR, OD_CAL_DIR)
     print('saving raw cal')
-    if not os.path.isdir(calibration_path):
-        os.mkdir(calibration_path)
     with open(os.path.join(calibration_path, data['filename']), 'w') as f:
         f.write(json.dumps(data))
     await sio.emit('setcalibrationrawod_callback', 'success' , namespace = '/dpu-evolver')
@@ -188,8 +192,6 @@ async def on_setcalibrationrawod(sid, data):
 async def on_setcalibrationrawtemp(sid, data):
     calibration_path = os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR, TEMP_CAL_DIR)
     print('saving raw cal')
-    if not os.path.isdir(calibration_path):
-        os.mkdir(calibration_path)
     with open(os.path.join(calibration_path, data['filename']), 'w') as f:
         f.write(json.dumps(data))
     await sio.emit('setcalibrationrawtemp_callback', 'success', namespace = '/dpu-evolver')
@@ -421,6 +423,7 @@ def define_default_config(config_json):
     DEFAULT_CONFIG.update(config_json)
 
 def attach(app):
+    [os.mkdir(d) for d in LOCATIONS if not os.path.isdir(d)]
     sio.attach(app)
 
 def is_connected():
