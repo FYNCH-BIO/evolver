@@ -18,6 +18,7 @@ PARAM = {}
 DATA = {}
 CONFIG = {}
 
+DEVICE_CONFIG = 'evolver-config.json'
 CAL_CONFIG = 'calibration.json'
 CALIBRATIONS_DIR = 'calibrations'
 FITTED_DIR = 'fittedCal'
@@ -251,6 +252,24 @@ async def on_setActiveTempCal(sid, data):
     with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, data['filename']), 'r') as f:
        cal = f.read()
     await sio.emit('calibrationtemp', cal, namespace='/dpu-evolver')
+
+@sio.on('getdevicename', namespace = '/dpu-evolver')
+async def on_getdevicename(sid, data):
+    config_path = os.path.join(LOCATION)
+    with open(os.path.join(LOCATION, DEVICE_CONFIG)) as f:
+       configJSON = json.load(f)
+    await sio.emit('broadcastname', configJSON, namespace = '/dpu-evolver')
+
+@sio.on('setdevicename', namespace = '/dpu-evolver')
+async def on_setdevicename(sid, data):
+    config_path = os.path.join(LOCATION)
+    print('saving device name')
+    if not os.path.isdir(config_path):
+        os.mkdir(config_path)
+    with open(os.path.join(config_path, DEVICE_CONFIG), 'w') as f:
+        f.write(json.dumps(data))
+    await sio.emit('broadcastname', data, namespace = '/dpu-evolver')
+
 
 @sio.on('stopread', namespace = '/dpu-evolver')
 async def on_stopread(sid, data):
