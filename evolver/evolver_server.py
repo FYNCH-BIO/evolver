@@ -14,9 +14,9 @@ SERIAL.close()
 
 DEFAULT_PARAMS = {"od":["we", "turb", "all"], "temp":["xr", "temp","all"], "stir": ["zv", "stir", "all"], "pump": ["st", "pump", "all"]}
 DEFAULT_CONFIG = {'od':[2125] * 16, 'temp':['NaN'] * 16}
-PARAM = {}
+PARAM = copy.deepcopy(DEFAULT_PARAMS)
+CONFIG = copy.deepcopy(DEFAULT_CONFIG)
 DATA = {}
-CONFIG = {}
 
 DEVICE_CONFIG = 'evolver-config.json'
 CAL_CONFIG = 'calibration.json'
@@ -41,22 +41,21 @@ LOCATIONS = [os.path.join(LOCATION, CALIBRATIONS_DIR),
 command_queue = []
 serial_queue = []
 last_data = None
+last_data_bcast = None
 last_time = time.time()
 running = False
-connected = False
+connected = True
 serial_available = True
 s_running = False
 b_running = False
 evolver_ip = None
 stopread = False
 sio = socketio.AsyncServer(async_handlers=True)
+power_level = [4095] * 16
 
 @sio.on('connect', namespace = '/dpu-evolver')
 async def on_connect(sid, environ):
     print('Connected dpu as server')
-    global DEFAULT_PARAMS, PARAM, connected
-    PARAM = DEFAULT_PARAMS
-    connected = True
 
 @sio.on('define', namespace = '/dpu-evolver')
 async def on_define(sid, data):
@@ -66,9 +65,7 @@ async def on_define(sid, data):
 
 @sio.on('disconnect', namespace = '/dpu-evolver')
 async def on_disconnect(sid):
-    global connected
     print('Disconnected dpu as Server')
-    connected = False
 
 @sio.on('command', namespace = '/dpu-evolver')
 async def on_command(sid, data):
@@ -103,15 +100,18 @@ async def on_command(sid, data):
 
 @sio.on('data', namespace = '/dpu-evolver')
 async def on_data(sid, data):
-    global last_data, DEFAULT_CONFIG, command_queue, evolver_ip, stopread, s_runing
+    global last_data, DEFAULT_CONFIG, command_queue, evolver_ip, stopread, s_runing, power_level
     stopread = False
     config = copy.deepcopy(DEFAULT_CONFIG)
     finished = False
     try_count = 0
+    print('received request')
+    print(data)
 
     if 'power' in data:
         for i,vial_power in enumerate(data['power']):
             config['od'][i] = vial_power
+            power_level = data['power']
 
     s_running = True
     while b_running:
@@ -120,6 +120,7 @@ async def on_data(sid, data):
     while not finished:
         try_count += 1
         command_queue.insert(0,(dict(config)))
+        print('About to run the commands')
         run_commands()
         if 'od' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('od') and 'NaN' not in DATA.get('temp') or try_count > 5:
             last_data = {'od': DATA.get('od', ['NaN'] * 16), 'temp':DATA.get('temp', ['NaN'] * 16), 'ip': evolver_ip}
@@ -361,6 +362,8 @@ def config_to_arduino(key, header, ending, method, config):
     if 'temp' in config:
         DEFAULT_CONFIG['temp'] = config['temp']
     myList = config.get(key)
+    print('wtf')
+    print(config)
 
     SERIAL.open()
     SERIAL.flushInput()
@@ -381,6 +384,7 @@ def data_from_arduino(key, header, ending):
     try:
         if serial_available:
             received = SERIAL.readline().decode('utf-8')
+            print(received)
         if received[0:4] == header and received[-3:] == ending:
             dataList = [int(s) for s in received[4:-4].split(',')]
             DATA[key] = dataList
@@ -396,13 +400,20 @@ def data_from_arduino(key, header, ending):
 
 def ping_arduino(config):
     global PARAM, ENDING_SEND, ENDING_RETURN, SERIAL, serial_available
+    print('pinging')
     if not SERIAL.isOpen():
         for key, value in config.items():
+            print(config)
+            print(serial_available)
             if not serial_available:
                 break
-            config_to_arduino(key, PARAM[key][0], ENDING_SEND, PARAM[key][2], config)
-            if serial_available:
-                data_from_arduino(key, PARAM[key][1], ENDING_RETURN)
+            try:
+                print(PARAM)
+                config_to_arduino(key, PARAM[key][0], ENDING_SEND, PARAM[key][2], config)
+                if serial_available:
+                    data_from_arduino(key, PARAM[key][1], ENDING_RETURN)
+            except KeyError:
+                pass
 
 def push_arduino(config):
     global PARAM, ENDING_SEND, SERIAL
@@ -442,7 +453,9 @@ def define_default_config(config_json):
     DEFAULT_CONFIG.update(config_json)
 
 def attach(app):
+    global CONFIG, DEFAULT_CONFIG, PARAMS, DEFAULT_PARAMS
     [os.mkdir(d) for d in LOCATIONS if not os.path.isdir(d)]
+    CONFIG = copy.deepcopy(DEFAULT_CONFIG)
     sio.attach(app)
 
 def is_connected():
@@ -454,17 +467,18 @@ def set_ip(ip):
     evolver_ip = ip
 
 async def broadcast():
-    global last_data, last_time, DEFAULT_CONFIG, command_queue, DATA, s_running, connected, b_running
+    global last_data, last_time, DEFAULT_CONFIG, command_queue, DATA, s_running, connected, b_running, last_data_bcast, power_level
     current_time = time.time()
     if s_running or not connected:
         return
 
     config = copy.deepcopy(DEFAULT_CONFIG)
+    config['od'] = power_level
     b_running = True
     command_queue.append(dict(config))
     run_commands()
     if 'od' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('od') and 'NaN' not in DATA.get('temp'):
-        last_data = {'od': DATA['od'], 'temp':DATA['temp']}
+        last_data_bcast = {'od': DATA['od'], 'temp':DATA['temp']}
         last_time = time.time()
         await sio.emit('databroadcast', last_data, namespace='/dpu-evolver')
     b_running = False
