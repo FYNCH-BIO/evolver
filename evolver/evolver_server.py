@@ -12,8 +12,8 @@ SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 3)
 SERIAL.flushInput()
 SERIAL.close()
 
-DEFAULT_PARAMS = {"od":["we", "turb", "all"], "temp":["xr", "temp","all"], "stir": ["zv", "stir", "all"], "pump": ["st", "pump", "all"]}
-DEFAULT_CONFIG = {'od':[2125] * 16, 'temp':['NaN'] * 16}
+DEFAULT_PARAMS = {"od":["we", "turb", "all"], "temp":["xr", "temp","all"], "stir": ["zv", "stir", "all"], "pump": ["st", "pump", "all"], "lxml":["px","lxml","all"]}
+DEFAULT_CONFIG = {'od':[4095] * 16, 'temp':['NaN'] * 16}
 PARAM = copy.deepcopy(DEFAULT_PARAMS)
 CONFIG = copy.deepcopy(DEFAULT_CONFIG)
 DATA = {}
@@ -43,6 +43,7 @@ serial_queue = []
 last_data = None
 last_data_bcast = None
 last_time = time.time()
+last_command = {'lxml': [4095]*32}
 running = False
 connected = True
 serial_available = True
@@ -69,7 +70,8 @@ async def on_disconnect(sid):
 
 @sio.on('command', namespace = '/dpu-evolver')
 async def on_command(sid, data):
-    global s_running
+    print(data)
+    global s_running, last_command
     param = data.get('param')
     message = data.get('message')
     vials = data.get('vials')
@@ -79,6 +81,7 @@ async def on_command(sid, data):
         config[param] = message
     else:
         if message == 'stop':
+            print('stopping all pumps')
             config[param] = get_pump_stop_command()
         else:
             config[param] = get_pump_command(message['pumps_binary'], message['pump_time'], message['efflux_pump_time'], message['delay_interval'], message['times_to_repeat'], message['run_efflux'])
@@ -94,9 +97,15 @@ async def on_command(sid, data):
         time.sleep(.2)
         arduino_serial(True)
         await sio.emit('commandbroadcast', data, namespace='/dpu-evolver')
+        addlastcommand(param, data)
     except OSError:
         pass
     s_running = False
+
+@sio.on('getlastcommands', namespace = '/dpu-evolver')
+async def on_getlastcommands(sid, data):
+    global last_command
+    await sio.emit('lastcommands', last_command, namespace='/dpu-evolver')
 
 @sio.on('data', namespace = '/dpu-evolver')
 async def on_data(sid, data):
@@ -168,13 +177,14 @@ async def on_setcalibrationod(sid, data):
     #ADD OD_FILENAME from returned parameter on data
 
     od_file = os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR, '.'.join(data['filename'].split('.')[:-1]) + '.txt')
-    parameters = reformat_parameters(data['parameters'])
+    parameters = reformat_parameters(data['parameters'], caltype = data['caltype'])
     with open(od_file, 'w') as f:
         for param in parameters:
             f.write(','.join(map(str,param)) + '\n')
 
 @sio.on('setcalibrationtemp', namespace = '/dpu-evolver')
 async def on_setcalibrationtemp(sid, data):
+    print('setting calibration temp fitted')
     #ADD TEMP_FILENAME from returned parameter on data
     temp_file = os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, '.'.join(data['filename'].split('.')[:-1]) + '.txt')
     parameters = reformat_parameters(data['parameters'], od = False)
@@ -277,9 +287,19 @@ async def on_stopread(sid, data):
     global stopread
     stopread = True
 
-def reformat_parameters(parameters, od = True):
+def addlastcommand(parameter, data):
+    global last_command
+    if (parameter == 'lxml'):
+        for index,value in enumerate(data['message']):
+            if not (value == 'NaN'):
+                last_command[parameter][index] = value
+
+def reformat_parameters(parameters, od = True, caltype = 'sigmoid'):
     if od:
-        reformatted_parameters = [[],[],[],[]]
+        if caltype == 'sigmoid':
+            reformatted_parameters = [[],[],[],[]]
+        if caltype == 'multidim_quad':
+            reformatted_parameters = [[],[],[],[],[],[]]
     else:
         reformatted_parameters = [[],[]]
     for vial in parameters:
@@ -362,7 +382,6 @@ def config_to_arduino(key, header, ending, method, config):
     if 'temp' in config:
         DEFAULT_CONFIG['temp'] = config['temp']
     myList = config.get(key)
-    print('wtf')
     print(config)
 
     SERIAL.open()
@@ -400,15 +419,11 @@ def data_from_arduino(key, header, ending):
 
 def ping_arduino(config):
     global PARAM, ENDING_SEND, ENDING_RETURN, SERIAL, serial_available
-    print('pinging')
     if not SERIAL.isOpen():
         for key, value in config.items():
-            print(config)
-            print(serial_available)
             if not serial_available:
                 break
             try:
-                print(PARAM)
                 config_to_arduino(key, PARAM[key][0], ENDING_SEND, PARAM[key][2], config)
                 if serial_available:
                     data_from_arduino(key, PARAM[key][1], ENDING_RETURN)
@@ -480,5 +495,6 @@ async def broadcast():
     if 'od' in DATA and 'temp' in DATA and 'NaN' not in DATA.get('od') and 'NaN' not in DATA.get('temp'):
         last_data_bcast = {'od': DATA['od'], 'temp':DATA['temp']}
         last_time = time.time()
-        await sio.emit('databroadcast', last_data, namespace='/dpu-evolver')
+        print(last_data_bcast)
+        await sio.emit('databroadcast', last_data_bcast, namespace='/dpu-evolver')
     b_running = False
