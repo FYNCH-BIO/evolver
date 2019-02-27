@@ -83,8 +83,10 @@ async def on_command(sid, data):
     else:
         if message == 'stop':
             config[param] = get_pump_stop_command()
-        else:
+        elif 'pumps_binary' in message:
             config[param] = get_pump_command(message['pumps_binary'], message['pump_time'], message['efflux_pump_time'], message['delay_interval'], message['times_to_repeat'], message['run_efflux'])
+        else:
+            config[param] = get_ipp_command(message)
 
     config['push'] = ''
     # Commands go to the front of the queue, then tell the arduinos to not use the serial port.
@@ -330,6 +332,11 @@ def get_pump_command(pumps_binary, num_secs, num_secs_efflux, interval, times_to
 def get_pump_stop_command():
     empty_vals = [0] * 17
     pump_cmd = ['o'] + empty_vals
+    return pump_cmd
+
+def get_ipp_command(delays):
+    empty_vals = [0] * 14
+    pump_cmd = ['i'] + delays + empty_vals
     return pump_cmd
 
 def remove_duplicate_commands(command_queue):
