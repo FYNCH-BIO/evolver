@@ -36,6 +36,7 @@ LOCATIONS = [os.path.join(LOCATION, CALIBRATIONS_DIR),
 
 command_queue = []
 commands_running = False
+reading_data = False
 last_command = {'lxml': [4095]*32}
 evolver_ip = None
 sio = socketio.AsyncServer(async_handlers=True)
@@ -254,10 +255,10 @@ def load_calibration():
         return json.loads(f.read())
 
 def run_commands(config = None):
-    global command_queue, commands_running, SERIAL
+    global command_queue, commands_running, SERIAL, reading_data
     commands_running = True
     if config:
-        if SERIAL.isOpen():
+        if SERIAL.isOpen() && reading_data:
             SERIAL.close()
         command_queue.insert(0, config)
     data = {}
@@ -270,11 +271,11 @@ def run_commands(config = None):
         if 'push' in config:
             push_arduino(config)
         else:
+            reading_data = True
             data = ping_arduino(config)
             while not all(len(x) > 0 for x in data.values()):
                 data = ping_arduino(config)
-                
-                
+            reading_data = False
 
         # Need to wait to prevent race condition:
         # https://stackoverflow.com/questions/1618141/pyserial-problem-with-arduino-works-with-the-python-shell-but-not-in-a-program/4941880#4941880
