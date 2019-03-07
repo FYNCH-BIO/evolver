@@ -389,7 +389,6 @@ def define_parameters(param_json):
 def attach(app):
     global CONFIG, DEFAULT_CONFIG, PARAMS, DEFAULT_PARAMS
     [os.mkdir(d) for d in LOCATIONS if not os.path.isdir(d)]
-    CONFIG = copy.deepcopy(DEFAULT_CONFIG)
     sio.attach(app)
 
 def set_ip(ip):
