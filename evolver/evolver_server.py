@@ -40,7 +40,7 @@ reading_data = False
 last_command = {'lxml': [4095]*32}
 evolver_ip = None
 sio = socketio.AsyncServer(async_handlers=True)
-broadcast_od_power = 4095 
+broadcast_od_power = 4095
 
 @sio.on('connect', namespace = '/dpu-evolver')
 async def on_connect(sid, environ):
@@ -99,21 +99,21 @@ async def on_data(sid, data):
 @sio.on('getcalibrationod', namespace = '/dpu-evolver')
 async def on_getcalibrationod(sid, data):
     with open(os.path.join(LOCATION, 'calibration.json')) as f:
-       CAL_CONFIG = json.load(f)
-       OD_FILENAME = CAL_CONFIG["activeCalibration"]["od"]["filename"]
-    await sio.emit('activecalibrationod', OD_FILENAME, namespace='/dpu-evolver')
-    with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR, OD_FILENAME), 'r') as f:
-       cal = f.read()
+        cal_config = json.load(f)
+        od_filename = cal_config["activeCalibration"]["od"]["filename"]
+    await sio.emit('activecalibrationod', od_filename, namespace='/dpu-evolver')
+    with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR, od_filename), 'r') as f:
+        cal = f.read()
     await sio.emit('calibrationod', cal, namespace='/dpu-evolver')
 
 @sio.on('getcalibrationtemp', namespace = '/dpu-evolver')
 async def on_getcalibrationtemp(sid, data):
     with open(os.path.join(LOCATION, 'calibration.json')) as f:
-       CAL_CONFIG = json.load(f)
-       TEMP_FILENAME = CAL_CONFIG["activeCalibration"]["temp"]["filename"]
-    await sio.emit('activecalibrationtemp', TEMP_FILENAME, namespace='/dpu-evolver')
-    with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, TEMP_FILENAME), 'r') as f:
-       cal = f.read()
+        cal_config = json.load(f)
+        temp_filename = cal_config["activeCalibration"]["temp"]["filename"]
+    await sio.emit('activecalibrationtemp', temp_filename, namespace='/dpu-evolver')
+    with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, temp_filename), 'r') as f:
+        cal = f.read()
     await sio.emit('calibrationtemp', cal, namespace='/dpu-evolver')
 
 @sio.on('setcalibrationod', namespace = '/dpu-evolver')
@@ -258,7 +258,7 @@ def run_commands(config = None):
     global command_queue, commands_running, SERIAL, reading_data
     commands_running = True
     if config:
-        if SERIAL.isOpen() && reading_data:
+        if SERIAL.isOpen() and reading_data:
             SERIAL.close()
         command_queue.insert(0, config)
     data = {}
@@ -330,7 +330,7 @@ def remove_duplicate_commands(command_queue):
         del command_queue[command_index]
 
     return command_queue
-  
+
 def config_to_arduino(key, key_list, header, ending, method):
     global SERIAL
     if SERIAL.isOpen():
