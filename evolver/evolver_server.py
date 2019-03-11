@@ -400,9 +400,9 @@ async def broadcast():
     global command_queue
     current_time = time.time()
     config = {'od':[broadcast_od_power] * 16, 'temp':['NaN'] * 16}
-    command_queue.append(dict(config))
     while commands_running:
         pass
+    command_queue.append(dict(config))
     data = run_commands()
     if 'od' in data and 'temp' in data and 'NaN' not in data.get('od') and 'NaN' not in data.get('temp'):
         print('Broadcasting data:')
