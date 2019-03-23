@@ -39,11 +39,10 @@ if __name__ == '__main__':
     bloop = asyncio.new_event_loop()
     last_time = None
     while True:
-        current_time = time.time() + 20
+        current_time = time.time()
         if last_time is None or current_time - last_time > 20:
             last_time = current_time
             try:
                 bloop.run_until_complete(evolver_server.broadcast())
-            except serial.serialutil.SerialException:
-                bloop.run_until_complete(evolver_server.broadcast())
+            except:
                 pass
