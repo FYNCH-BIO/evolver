@@ -41,7 +41,7 @@ reading_data = False
 last_command = {'lxml': [4095]*32}
 evolver_ip = None
 sio = socketio.AsyncServer(async_handlers=True)
-broadcast_od_power = 4095
+broadcast_od_power =2125 
 
 @sio.on('connect', namespace = '/dpu-evolver')
 async def on_connect(sid, environ):
@@ -276,8 +276,7 @@ def run_commands(config = None):
         except IndexError:
             break
         try:
-            if not SERIAL.isOpen():
-                SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 2)
+            SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 2)
             if 'push' in config:
                 push_arduino(config)
                 time.sleep(.2)
@@ -363,7 +362,7 @@ def data_from_arduino(key, header, ending):
     data_list = None
     if not SERIAL.isOpen():
         return
-    received = SERIAL.readline().decode('utf-8')
+    received = SERIAL.readline().decode('UTF-8')
     print('Received from arduino:')
     print(received)
     if received[0:4] == header and received[-3:] == ending:
@@ -378,6 +377,7 @@ def ping_arduino(config):
     for key, value in config.items():
         config_to_arduino(key, value, PARAM[key][0], ENDING_SEND, PARAM[key][2])
         data[key] = data_from_arduino(key, PARAM[key][1], ENDING_RETURN)
+        time.sleep(.5)
     return data
 
 def push_arduino(config):
@@ -386,8 +386,9 @@ def push_arduino(config):
         if key is not 'push':
             config_to_arduino(key, value, PARAM[key][0], ENDING_SEND, PARAM[key][2])
             if key == 'temp':
+                time.sleep(.1)
                 SERIAL.reset_input_buffer()
-                SERIAL.reset_output_buffer()
+                #SERIAL.reset_output_buffer()
 
 def define_parameters(param_json):
     global PARAM
