@@ -41,7 +41,7 @@ reading_data = False
 last_command = {'lxml': [4095]*32}
 evolver_ip = None
 sio = socketio.AsyncServer(async_handlers=True)
-broadcast_od_power =2125 
+broadcast_od_power = 4095
 
 @sio.on('connect', namespace = '/dpu-evolver')
 async def on_connect(sid, environ):
@@ -388,7 +388,6 @@ def push_arduino(config):
             if key == 'temp':
                 time.sleep(.1)
                 SERIAL.reset_input_buffer()
-                #SERIAL.reset_output_buffer()
 
 def define_parameters(param_json):
     global PARAM
