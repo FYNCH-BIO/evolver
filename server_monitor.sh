@@ -1,6 +1,6 @@
 #!/bin/bash
 
-supervisor_pid=`ps aux | grep supervisord | grep -v "grep" | awk '{print $2}'`
+supervisor_pid=$(ps aux | grep supervisord | grep -v "grep" | awk '{print $2}')
 log_location="/var/log/supervisor/"
 previous_log_location="/home/pi/evolver/num_log_lines.txt"
 previous_log_count=0
