@@ -76,7 +76,7 @@ async def on_command(sid, data):
 
     config['push'] = ''
     # Commands go to the front of the queue, then tell the arduinos to not use the serial port.
-    run_commands(config = dict(config))
+    run_commands(config = dict(config), reset = True)
     await sio.emit('commandbroadcast', data, namespace='/dpu-evolver')
 
 @sio.on('getlastcommands', namespace = '/dpu-evolver')
@@ -259,7 +259,7 @@ def load_calibration():
     with open(os.path.join(LOCATION, 'test_device.json'), 'r') as f:
         return json.loads(f.read())
 
-def run_commands(config = None):
+def run_commands(config = None, reset = False):
     global command_queue, commands_running, SERIAL, reading_data
     commands_running = True
     if config:
@@ -288,6 +288,8 @@ def run_commands(config = None):
             print('Error in running commands - relinquishing serial')
             print(e)
             SERIAL.close()
+            if reset:
+                commands_running = False
             return
         # Need to wait to prevent race condition:
         # https://stackoverflow.com/questions/1618141/pyserial-problem-with-arduino-works-with-the-python-shell-but-not-in-a-program/4941880#4941880
