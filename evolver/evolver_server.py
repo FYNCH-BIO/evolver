@@ -76,7 +76,7 @@ async def on_command(sid, data):
 
     config['push'] = ''
     # Commands go to the front of the queue, then tell the arduinos to not use the serial port.
-    run_commands(config = dict(config), reset = True)
+    run_commands(config = dict(config))
     await sio.emit('commandbroadcast', data, namespace='/dpu-evolver')
 
 @sio.on('getlastcommands', namespace = '/dpu-evolver')
@@ -191,11 +191,17 @@ async def on_getfittedcalibrationfilenamesod(sid, data):
 
 @sio.on('setActiveODCal', namespace = '/dpu-evolver')
 async def on_setActiveODCal(sid, data):
-    with open(os.path.join(LOCATION, 'calibration.json')) as f:
-       CAL_CONFIG = json.load(f)
-       CAL_CONFIG["activeCalibration"]["od"]["filename"] = data['filename']
-    with open(os.path.join(LOCATION, 'calibration.json'), 'w') as f:
-        f.write(json.dumps(CAL_CONFIG))
+    cal = ''
+    try:
+        with open(os.path.join(LOCATION, CAL_CONFIG)) as f:
+            cal_config = json.load(f)
+            cal_config["activeCalibration"]["od"]["filename"] = data['filename']
+    except FileNotFoundError:
+        cal_config = {"activeCalibration":{"od":{"filename":data['filename']}, "temp":{"filename":''}}}
+
+    with open(os.path.join(LOCATION, CAL_CONFIG), 'w') as f:
+        f.write(json.dumps(cal_config))
+
     await sio.emit('activecalibrationod', data['filename'], namespace='/dpu-evolver')
     with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR, data['filename']), 'r') as f:
        cal = f.read()
@@ -203,11 +209,16 @@ async def on_setActiveODCal(sid, data):
 
 @sio.on('setActiveTempCal', namespace = '/dpu-evolver')
 async def on_setActiveTempCal(sid, data):
-    with open(os.path.join(LOCATION, 'calibration.json')) as f:
-       CAL_CONFIG = json.load(f)
-       CAL_CONFIG["activeCalibration"]["temp"]["filename"] = data['filename']
-    with open(os.path.join(LOCATION, 'calibration.json'), 'w') as f:
-        f.write(json.dumps(CAL_CONFIG))
+    cal = ''
+    try:
+        with open(os.path.join(LOCATION, CAL_CONFIG)) as f:
+            cal_config = json.load(f)
+            cal_config["activeCalibration"]["temp"]["filename"] = data['filename']
+    except FileNotFoundError:
+        cal_config = {"activeCalibration":{"od":{"filename":''}, "temp":{"filename":data['filename']}}}
+
+    with open(os.path.join(LOCATION, CAL_CONFIG), 'w') as f:
+        f.write(json.dumps(cal_config))
     await sio.emit('activecalibrationtemp', data['filename'], namespace='/dpu-evolver')
     with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, data['filename']), 'r') as f:
        cal = f.read()
@@ -259,7 +270,7 @@ def load_calibration():
     with open(os.path.join(LOCATION, 'test_device.json'), 'r') as f:
         return json.loads(f.read())
 
-def run_commands(config = None, reset = False):
+def run_commands(config = None, reset = True):
     global command_queue, commands_running, SERIAL, reading_data
     commands_running = True
     if config:
