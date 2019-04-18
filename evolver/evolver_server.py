@@ -76,7 +76,7 @@ async def on_command(sid, data):
 
     config['push'] = ''
     # Commands go to the front of the queue, then tell the arduinos to not use the serial port.
-    run_commands(config = dict(config), reset = True)
+    run_commands(config = dict(config))
     await sio.emit('commandbroadcast', data, namespace='/dpu-evolver')
 
 @sio.on('getlastcommands', namespace = '/dpu-evolver')
@@ -300,7 +300,7 @@ def load_calibration():
     with open(os.path.join(LOCATION, 'test_device.json'), 'r') as f:
         return json.loads(f.read())
 
-def run_commands(config = None, reset = False):
+def run_commands(config = None, reset = True):
     global command_queue, commands_running, SERIAL, reading_data
     commands_running = True
     if config:
