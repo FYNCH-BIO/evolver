@@ -41,7 +41,7 @@ reading_data = False
 last_command = {'lxml': [4095]*32}
 evolver_ip = None
 sio = socketio.AsyncServer(async_handlers=True)
-broadcast_od_power = 4095
+broadcast_od_power = 2500
 
 @sio.on('connect', namespace = '/dpu-evolver')
 async def on_connect(sid, environ):
