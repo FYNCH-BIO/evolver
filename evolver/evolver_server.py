@@ -8,7 +8,7 @@ import os
 from threading import Thread
 import copy
 
-SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 2)
+SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 5)
 SERIAL.reset_input_buffer()
 SERIAL.reset_output_buffer()
 SERIAL.close()
@@ -387,9 +387,11 @@ def data_from_arduino(key, header, ending):
     print(received, flush = True)
     if received[0:4] == header and received[-3:] == ending:
         data_list = [int(s) for s in received[4:-4].split(',')]
+        return data_list
     else:
         print('Data from arduino misconfigured', flush = True)
-    return data_list
+        data_list = 'Data misconfigured'
+        return data_list
 
 def ping_arduino(config):
     global PARAM, ENDING_SEND, ENDING_RETURN, SERIAL
@@ -397,6 +399,9 @@ def ping_arduino(config):
     for key, value in config.items():
         config_to_arduino(key, value, PARAM[key][0], ENDING_SEND, PARAM[key][2])
         data[key] = data_from_arduino(key, PARAM[key][1], ENDING_RETURN)
+        if data[key] == 'Data misconfigured':
+           data = 'Data misconfigured'
+           return data
         time.sleep(.5)
     return data
 
