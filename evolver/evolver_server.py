@@ -36,12 +36,12 @@ LOCATIONS = [os.path.join(LOCATION, CALIBRATIONS_DIR),
                 os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR, TEMP_CAL_DIR)]
 
 command_queue = []
-commands_running = False
-reading_data = False
 last_command = {'lxml': [4095]*32}
 evolver_ip = None
 sio = socketio.AsyncServer(async_handlers=True)
 broadcast_od_power = 2500
+
+last_data = {}
 
 @sio.on('connect', namespace = '/dpu-evolver')
 async def on_connect(sid, environ):
@@ -58,12 +58,10 @@ async def on_disconnect(sid):
 
 @sio.on('command', namespace = '/dpu-evolver')
 async def on_command(sid, data):
-    global commands_running, command_queue, SERIAL
+    global command_queue
     print('Received COMMAND', flush = True)
     param = data.get('param')
     message = data.get('message')
-    vials = data.get('vials')
-    values = data.get('values')
     config = {}
     if param != 'pump':
         config[param] = message
@@ -76,7 +74,8 @@ async def on_command(sid, data):
 
     config['push'] = ''
     # Commands go to the front of the queue, then tell the arduinos to not use the serial port.
-    run_commands(config = dict(config))
+    command_queue.append(copy.deepcopy(config))
+    run_commands()
     await sio.emit('commandbroadcast', data, namespace='/dpu-evolver')
 
 @sio.on('getlastcommands', namespace = '/dpu-evolver')
@@ -86,14 +85,12 @@ async def on_getlastcommands(sid, data):
 
 @sio.on('data', namespace = '/dpu-evolver')
 async def on_data(sid, data):
-    global command_queue, commands_running, evolver_ip
+    global command_queue, evolver_ip
     print('Received request from DATA', flush = True)
     try_count = 0
     config = data['config']
 
-    while commands_running:
-        pass
-    command_queue.append(config)
+    command_queue.append(copy.deepcopy(config))
     evolver_data = run_commands()
     if evolver_data is None:
         return
@@ -278,15 +275,7 @@ def load_calibration():
         return json.loads(f.read())
 
 def run_commands(config = None, reset = True):
-    global command_queue, commands_running, SERIAL, reading_data
-    commands_running = True
-    if config:
-        if SERIAL.isOpen():
-            SERIAL.close()
-            time.sleep(.2)
-            command_queue = []
-        command_queue = [config]
-    data = {}
+    global command_queue, SERIAL, last_data
     while len(command_queue) > 0:
         command_queue = remove_duplicate_commands(command_queue)
         try:
@@ -295,19 +284,18 @@ def run_commands(config = None, reset = True):
             break
         try:
             SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 2)
+            SERIAL.reset_input_buffer()
+            SERIAL.reset_output_buffer()
             if 'push' in config:
-                push_arduino(config)
-                time.sleep(.2)
+                push_arduino(config)                
                 SERIAL.close()
             else:
-                data = ping_arduino(config)
+                last_data = ping_arduino(config)
                 SERIAL.close()
         except (TypeError, ValueError, serial.serialutil.SerialException)  as e:
             print('Error in running commands - relinquishing serial', flush = True)
             print(e, flush = True)
             SERIAL.close()
-            if reset:
-                commands_running = False
             return
         # Need to wait to prevent race condition:
         # https://stackoverflow.com/questions/1618141/pyserial-problem-with-arduino-works-with-the-python-shell-but-not-in-a-program/4941880#4941880
@@ -318,8 +306,7 @@ def run_commands(config = None, reset = True):
             interactively; you were waiting the 1.5 seconds needed for the software to come up."""
 
         time.sleep(.5)
-    commands_running = False
-    return data
+    return last_data
 
 # TODO - refactor this
 def get_pump_command(pumps_binary, num_secs, num_secs_efflux, interval, times_to_repeat, run_efflux):
@@ -380,8 +367,6 @@ def config_to_arduino(key, key_list, header, ending, method):
 def data_from_arduino(key, header, ending):
     global SERIAL
     data_list = None
-    if not SERIAL.isOpen():
-        return
     received = SERIAL.readline().decode('UTF-8')
     print('Received from arduino:', flush = True)
     print(received, flush = True)
@@ -402,7 +387,6 @@ def ping_arduino(config):
         if data[key] == 'Data misconfigured':
            data = 'Data misconfigured'
            return data
-        time.sleep(.5)
     return data
 
 def push_arduino(config):
@@ -410,9 +394,6 @@ def push_arduino(config):
     for key, value in config.items():
         if key is not 'push':
             config_to_arduino(key, value, PARAM[key][0], ENDING_SEND, PARAM[key][2])
-            if key == 'temp':
-                time.sleep(.1)
-                SERIAL.reset_input_buffer()
 
 def define_parameters(param_json):
     global PARAM
@@ -429,13 +410,11 @@ def set_ip(ip):
     evolver_ip = ip
 
 async def broadcast():
-    global command_queue, commands_running
+    global command_queue
     print('Got command from BROADCAST', flush = True)
     current_time = time.time()
     config = {'od':[broadcast_od_power] * 16, 'temp':['NaN'] * 16}
-    while commands_running:
-        pass
-    command_queue.append(dict(config))
+    command_queue.append(copy.deepcopy(config))
     data = run_commands()
     if data is None:
         return
