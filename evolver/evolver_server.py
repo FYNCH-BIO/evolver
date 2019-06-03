@@ -5,52 +5,24 @@ import time
 import asyncio
 import json
 import os
-from threading import Thread
-import copy
-
-SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 5)
-SERIAL.reset_input_buffer()
-SERIAL.reset_output_buffer()
-SERIAL.close()
-
-PARAM = {"od":["we", "turb", "all"], "temp":["xr", "temp","all"], "stir": ["zv", "stir", "all"], "pump": ["st", "pump", "all"], "lxml":["px","lxml","all"]}
-
-DEVICE_CONFIG = 'evolver-config.json'
-CAL_CONFIG = 'calibration.json'
-CALIBRATIONS_DIR = 'calibrations'
-FITTED_DIR = 'fittedCal'
-RAWCAL_DIR = 'rawCal'
-OD_CAL_DIR = 'od'
-TEMP_CAL_DIR = 'temp'
-
-ENDING_SEND = '!'
-ENDING_RETURN = 'end'
+import yaml
+from traceback import print_exc
 
 LOCATION = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
-LOCATIONS = [os.path.join(LOCATION, CALIBRATIONS_DIR),
-                os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR),
-                os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR),
-                os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR),
-                os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR),
-                os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR, OD_CAL_DIR),
-                os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR, TEMP_CAL_DIR)]
+IMMEDIATE = 'immediate_command_char'
+RECURRING = 'recurring_command_char'
 
+evolver_conf = {}
+serial_connection = None
 command_queue = []
-commands_running = False
-reading_data = False
-last_command = {'lxml': [4095]*32}
-evolver_ip = None
 sio = socketio.AsyncServer(async_handlers=True)
-broadcast_od_power = 2500
+
+class EvolverSerialError(Exception):
+    pass
 
 @sio.on('connect', namespace = '/dpu-evolver')
 async def on_connect(sid, environ):
     print('Connected dpu as server', flush = True)
-
-@sio.on('define', namespace = '/dpu-evolver')
-async def on_define(sid, data):
-    print('defining params', flush = True)
-    define_parameters(data['params'])
 
 @sio.on('disconnect', namespace = '/dpu-evolver')
 async def on_disconnect(sid):
@@ -58,66 +30,56 @@ async def on_disconnect(sid):
 
 @sio.on('command', namespace = '/dpu-evolver')
 async def on_command(sid, data):
-    global commands_running, command_queue, SERIAL
+    global command_queue, evolver_conf
     print('Received COMMAND', flush = True)
-    param = data.get('param')
-    message = data.get('message')
-    vials = data.get('vials')
-    values = data.get('values')
-    config = {}
-    if param != 'pump':
-        config[param] = message
-    else:
-        if message == 'stop':
-            print('stopping all pumps', flush = True)
-            config[param] = get_pump_stop_command()
-        else:
-            config[param] = get_pump_command(message['pumps_binary'], message['pump_time'], message['efflux_pump_time'], message['delay_interval'], message['times_to_repeat'], message['run_efflux'])
+    param = data.get('param', None)
+    value = data.get('value', None)
+    immediate = data.get('immediate', None)
+    recurring = data.get('recurring', None)
+    fields_expected_outgoing = data.get('fields_expected_outgoing', None)
+    fields_expected_incoming = data.get('fields_expected_incoming', None)
 
-    config['push'] = ''
-    # Commands go to the front of the queue, then tell the arduinos to not use the serial port.
-    run_commands(config = dict(config))
-    await sio.emit('commandbroadcast', data, namespace='/dpu-evolver')
+    # Update the configuration for the param
+    # TODO - make parameters generalized
+    evolver_conf['experimental_params'][param]['value'] = value
+    if recurring is not None:
+        evolver_conf['experimental_params'][param]['recurring'] = recurring
+    if fields_expected_outgoing is not None:
+        evolver_conf['experimental_params'][param]['fields_expected_outgoing'] = fields_expected_outgoing
+    if fields_expected_incoming is not None:
+        evolver_conf['experimental_params'][param]['fields_expected_incoming'] = fields_expected_incoming
 
-@sio.on('getlastcommands', namespace = '/dpu-evolver')
+
+    # Save to config the values sent in for the parameter
+    with open(os.path.realpath(os.path.join(os.getcwd(),os.path.dirname(__file__), evolver.CONF_FILENAME)), 'w') as ymlfile:
+        yaml.dump(evolver_conf, ymlfile)
+
+    if immediate:
+        clear_broadcast(param)
+        command_queue.insert(0, {'param': param, 'value': value, 'type': COMMAND})
+
+@sio.on('getconfig', namespace = '/dpu-evolver')
 async def on_getlastcommands(sid, data):
-    global last_command
-    await sio.emit('lastcommands', last_command, namespace='/dpu-evolver')
-
-@sio.on('data', namespace = '/dpu-evolver')
-async def on_data(sid, data):
-    global command_queue, commands_running, evolver_ip
-    print('Received request from DATA', flush = True)
-    try_count = 0
-    config = data['config']
-
-    while commands_running:
-        pass
-    command_queue.append(config)
-    evolver_data = run_commands()
-    if evolver_data is None:
-        return
-    if 'od' in evolver_data and 'temp' in evolver_data and 'NaN' not in evolver_data.get('od') and 'NaN' not in evolver_data.get('temp') and len(evolver_data.get('od', [])) > 0 and len(evolver_data.get('temp',[])) > 0 or try_count > 5:
-        evolver_data['ip'] = evolver_ip
-        await sio.emit('dataresponse', evolver_data, namespace='/dpu-evolver')
+    global evolver_conf
+    await sio.emit('config', evolver_conf, namespace='/dpu-evolver')
 
 @sio.on('getcalibrationod', namespace = '/dpu-evolver')
 async def on_getcalibrationod(sid, data):
-    with open(os.path.join(LOCATION, 'calibration.json')) as f:
+    with open(os.path.join(LOCATION, evolver_conf['calibration'])) as f:
         cal_config = json.load(f)
-        od_filename = cal_config["activeCalibration"]["od"]["filename"]
+        od_filename = cal_config['activeCalibration']['od']['filename']
     await sio.emit('activecalibrationod', od_filename, namespace='/dpu-evolver')
-    with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR, od_filename), 'r') as f:
+    with open(os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['fitted_data_directory'], evolver_conf['od_calibration_directory'], od_filename), 'r') as f:
         cal = f.read()
     await sio.emit('calibrationod', cal, namespace='/dpu-evolver')
 
 @sio.on('getcalibrationtemp', namespace = '/dpu-evolver')
 async def on_getcalibrationtemp(sid, data):
-    with open(os.path.join(LOCATION, 'calibration.json')) as f:
+    with open(os.path.join(LOCATION, evolver_conf['calibration'])) as f:
         cal_config = json.load(f)
-        temp_filename = cal_config["activeCalibration"]["temp"]["filename"]
+        temp_filename = cal_config['activeCalibration']['temp']['filename']
     await sio.emit('activecalibrationtemp', temp_filename, namespace='/dpu-evolver')
-    with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, temp_filename), 'r') as f:
+    with open(os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['fitted_data_directory'], evolver_conf['temp_calibration_directory'], temp_filename), 'r') as f:
         cal = f.read()
     await sio.emit('calibrationtemp', cal, namespace='/dpu-evolver')
 
@@ -125,7 +87,7 @@ async def on_getcalibrationtemp(sid, data):
 async def on_setcalibrationod(sid, data):
     #ADD OD_FILENAME from returned parameter on data
 
-    od_file = os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR, '.'.join(data['filename'].split('.')[:-1]) + '.txt')
+    od_file = os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['fitted_data_directory'], evolver_conf['od_calibration_directory'], '.'.join(data['filename'].split('.')[:-1]) + '.txt')
     parameters = reformat_parameters(data['parameters'], caltype = data['caltype'])
     with open(od_file, 'w') as f:
         for param in parameters:
@@ -135,7 +97,7 @@ async def on_setcalibrationod(sid, data):
 async def on_setcalibrationtemp(sid, data):
     print('setting calibration temp fitted', flush = True)
     #ADD TEMP_FILENAME from returned parameter on data
-    temp_file = os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, '.'.join(data['filename'].split('.')[:-1]) + '.txt')
+    temp_file = os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['fitted_data_directory'], evolver_conf['temp_calibration_directory'], '.'.join(data['filename'].split('.')[:-1]) + '.txt')
     parameters = reformat_parameters(data['parameters'], od = False)
     with open(temp_file, 'w') as f:
         for param in parameters:
@@ -143,7 +105,7 @@ async def on_setcalibrationtemp(sid, data):
 
 @sio.on('setcalibrationrawod', namespace = '/dpu-evolver')
 async def on_setcalibrationrawod(sid, data):
-    calibration_path = os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR, OD_CAL_DIR)
+    calibration_path = os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['raw_data_directory'], evolver_conf['od_calibration_directory'])
     print('saving raw cal', flush = True)
     with open(os.path.join(calibration_path, data['filename']), 'w') as f:
         f.write(json.dumps(data))
@@ -151,7 +113,7 @@ async def on_setcalibrationrawod(sid, data):
 
 @sio.on('setcalibrationrawtemp', namespace = '/dpu-evolver')
 async def on_setcalibrationrawtemp(sid, data):
-    calibration_path = os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR, TEMP_CAL_DIR)
+    calibration_path = os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['raw_data_directory'], evolver_conf['temp_calibration_directory'])
     print('saving raw cal', flush = True)
     with open(os.path.join(calibration_path, data['filename']), 'w') as f:
         f.write(json.dumps(data))
@@ -159,52 +121,52 @@ async def on_setcalibrationrawtemp(sid, data):
 
 @sio.on('getcalibrationrawod', namespace = '/dpu-evolver')
 async def on_getcalibrationrawod(sid, data):
-    calibration_path = os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR, OD_CAL_DIR)
+    calibration_path = os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['raw_data_directory'], evolver_conf['od_calibration_directory'])
     with open(os.path.join(calibration_path, data['filename']), 'r') as f:
         await sio.emit('calibrationrawod', json.loads(f.read()), namespace = '/dpu-evolver')
 
 @sio.on('getcalibrationrawtemp', namespace = '/dpu-evolver')
 async def on_getcalibrationrawtemp(sid, data):
-    calibration_path = os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR, TEMP_CAL_DIR)
+    calibration_path = os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['raw_data_directory'], evolver_conf['temp_calibration_directory'])
     with open(os.path.join(calibration_path, data['filename']), 'r') as f:
         await sio.emit('calibrationrawtemp', json.loads(f.read()), namespace = '/dpu-evolver')
 
 @sio.on('getcalibrationfilenamesod', namespace = '/dpu-evolver')
 async def on_getcalibrationfilenamesod(sid, data):
-    files = os.listdir(os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR, OD_CAL_DIR))
+    files = os.listdir(os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['raw_data_directory'], evolver_conf['od_calibration_directory']))
     await sio.emit('odfilenames', files, namespace = '/dpu-evolver')
 
 @sio.on('getcalibrationfilenamestemp', namespace = '/dpu-evolver')
 async def on_getcalibrationfilenamesod(sid, data):
-    files = os.listdir(os.path.join(LOCATION, CALIBRATIONS_DIR, RAWCAL_DIR, TEMP_CAL_DIR))
+    files = os.listdir(os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['raw_data_directory'], evolver_conf['temp_calibration_directory']))
     await sio.emit('tempfilenames', files, namespace = '/dpu-evolver')
 
 @sio.on('getfittedcalibrationfilenamesod', namespace = '/dpu-evolver')
 async def on_getfittedcalibrationfilenamesod(sid, data):
-    files = os.listdir(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR))
+    files = os.listdir(os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['fitted_data_directory'], evolver_conf['od_calibration_directory']))
     await sio.emit('odfittedfilenames', files, namespace = '/dpu-evolver')
 
 @sio.on('getfittedcalibrationfilenamestemp', namespace = '/dpu-evolver')
 async def on_getfittedcalibrationfilenamesod(sid, data):
-    files = os.listdir(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR))
+    files = os.listdir(os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['fitted_data_directory'], evolver_conf['temp_calibration_directory']))
     await sio.emit('tempfittedfilenames', files, namespace = '/dpu-evolver')
 
 @sio.on('setActiveODCal', namespace = '/dpu-evolver')
 async def on_setActiveODCal(sid, data):
     cal = ''
     try:
-        with open(os.path.join(LOCATION, CAL_CONFIG)) as f:
+        with open(os.path.join(LOCATION, evolver_conf['calibration'])) as f:
             cal_config = json.load(f)
             cal_config["activeCalibration"]["od"]["filename"] = data['filename']
     except FileNotFoundError:
         cal_config = {"activeCalibration":{"od":{"filename":data['filename']}, "temp":{"filename":''}}}
 
-    with open(os.path.join(LOCATION, CAL_CONFIG), 'w') as f:
+    with open(os.path.join(LOCATION, evolver_conf['calibration']), 'w') as f:
         f.write(json.dumps(cal_config))
 
     await sio.emit('activecalibrationod', data['filename'], namespace='/dpu-evolver')
     try:
-        with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, OD_CAL_DIR, data['filename']), 'r') as f:
+        with open(os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['fitted_data_directory'], evolver_conf['od_calibration_directory'], data['filename']), 'r') as f:
             cal = f.read()
     except FileNotFoundError:
         print('Calibration file cannot be found: ' + data['filename'], flush = True)
@@ -214,17 +176,17 @@ async def on_setActiveODCal(sid, data):
 async def on_setActiveTempCal(sid, data):
     cal = ''
     try:
-        with open(os.path.join(LOCATION, CAL_CONFIG)) as f:
+        with open(os.path.join(LOCATION, evolver_conf['calibration'])) as f:
             cal_config = json.load(f)
             cal_config["activeCalibration"]["temp"]["filename"] = data['filename']
     except FileNotFoundError:
         cal_config = {"activeCalibration":{"od":{"filename":''}, "temp":{"filename":data['filename']}}}
 
-    with open(os.path.join(LOCATION, CAL_CONFIG), 'w') as f:
+    with open(os.path.join(LOCATION, evolver_conf['calibration']), 'w') as f:
         f.write(json.dumps(cal_config))
     await sio.emit('activecalibrationtemp', data['filename'], namespace='/dpu-evolver')
     try:
-        with open(os.path.join(LOCATION, CALIBRATIONS_DIR, FITTED_DIR, TEMP_CAL_DIR, data['filename']), 'r') as f:
+        with open(os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['fitted_data_directory'], evolver_conf['temp_calibration_directory'], data['filename']), 'r') as f:
             cal = f.read()
     except FileNotFoundError:
         print('Calibration file cannot be found: ' + data['filename'], flush = True)
@@ -234,7 +196,7 @@ async def on_setActiveTempCal(sid, data):
 @sio.on('getdevicename', namespace = '/dpu-evolver')
 async def on_getdevicename(sid, data):
     config_path = os.path.join(LOCATION)
-    with open(os.path.join(LOCATION, DEVICE_CONFIG)) as f:
+    with open(os.path.join(LOCATION, evolver_conf['device'])) as f:
        configJSON = json.load(f)
     await sio.emit('broadcastname', configJSON, namespace = '/dpu-evolver')
 
@@ -244,7 +206,7 @@ async def on_setdevicename(sid, data):
     print('saving device name', flush = True)
     if not os.path.isdir(config_path):
         os.mkdir(config_path)
-    with open(os.path.join(config_path, DEVICE_CONFIG), 'w') as f:
+    with open(os.path.join(config_path, evolver_conf['device']), 'w') as f:
         f.write(json.dumps(data))
     await sio.emit('broadcastname', data, namespace = '/dpu-evolver')
 
@@ -252,13 +214,6 @@ async def on_setdevicename(sid, data):
 async def on_setbroadcastodpower(sid, data):
     global broadcast_od_power
     broadcast_od_power = int(data)
-
-def addlastcommand(parameter, data):
-    global last_command
-    if (parameter == 'lxml'):
-        for index,value in enumerate(data['message']):
-            if not (value == 'NaN'):
-                last_command[parameter][index] = value
 
 def reformat_parameters(parameters, od = True, caltype = 'sigmoid'):
     if od:
@@ -273,174 +228,123 @@ def reformat_parameters(parameters, od = True, caltype = 'sigmoid'):
             reformatted_parameters[i].append(param)
     return reformatted_parameters
 
-def load_calibration():
-    with open(os.path.join(LOCATION, 'test_device.json'), 'r') as f:
-        return json.loads(f.read())
+def clear_broadcast(param=None):
+    """ Removes broadcast commands of a specific param from queue """
+    global command_queue
+    for i, command in enumerate(command_queue):
+        if (command['param'] == param or param is None) and command['type'] == RECURRING:
+            command_queue.pop(i)
+            break
 
-def run_commands(config = None, reset = True):
-    global command_queue, commands_running, SERIAL, reading_data
-    commands_running = True
-    if config:
-        if SERIAL.isOpen():
-            SERIAL.close()
-            time.sleep(.2)
-            command_queue = []
-        command_queue = [config]
+def run_commands():
+    global command_queue, serial_connection
     data = {}
     while len(command_queue) > 0:
-        command_queue = remove_duplicate_commands(command_queue)
+        command = command_queue.pop(0)
         try:
-            config = command_queue.pop(0)
-        except IndexError:
-            break
-        try:
-            SERIAL = serial.Serial(port="/dev/ttyAMA0", baudrate = 9600, timeout = 2)
-            if 'push' in config:
-                push_arduino(config)
-                time.sleep(.2)
-                SERIAL.close()
-            else:
-                data = ping_arduino(config)
-                SERIAL.close()
-        except (TypeError, ValueError, serial.serialutil.SerialException)  as e:
-            print('Error in running commands - relinquishing serial', flush = True)
-            print(e, flush = True)
-            SERIAL.close()
-            if reset:
-                commands_running = False
-            return
-        # Need to wait to prevent race condition:
-        # https://stackoverflow.com/questions/1618141/pyserial-problem-with-arduino-works-with-the-python-shell-but-not-in-a-program/4941880#4941880
-
-        """ When you open the serial port, this causes the Arduino to reset. Since the Arduino takes some time to bootup,
-            all the input goes to the bitbucket (or probably to the bootloader which does god knows what with it).
-            If you insert a sleep, you wait for the Arduino to come up so your serial code. This is why it works
-            interactively; you were waiting the 1.5 seconds needed for the software to come up."""
-
-        time.sleep(.5)
-    commands_running = False
+            returned_data = serial_communication(command['param'], command['value'], command['type'])
+            if returned_data is not None:
+                data[command['param']] = returned_data
+        except (TypeError, ValueError, serial.serialutil.SerialException, EvolverSerialError) as e:
+            print(str(e.__class__.__name__), flush = True)
+            print_exc()
     return data
 
-# TODO - refactor this
-def get_pump_command(pumps_binary, num_secs, num_secs_efflux, interval, times_to_repeat, run_efflux):
-    num_secs = float(num_secs)
-    empty_vals = [0] * 11
+def serial_communication(param, value, comm_type):
+    output = []
 
-    if run_efflux:
-        run_efflux = 1
+    # Check that parameters being sent to arduino match expected values
+    if comm_type == RECURRING:
+        output.append(evolver_conf[RECURRING])
+    if comm_type == IMMEDIATE:
+        output.append(evolver_conf[IMMEDIATE])
+
+    if type(value) is list:
+       output = output + list(map(str,value))
     else:
-        run_efflux = 0
+        output.append(value)
 
-    # Command structure: "st<MODE><time to pump>,<time to pump efflux extra>,<delay interval>,<times to repeat>,<run efflux simultaneously>,<vials binary>,0,0,0,0,0,0,0,0,0,0,0 !"
-    pump_cmd = ["p", '{:.2f}'.format(num_secs), '{:.2f}'.format(num_secs_efflux), interval, times_to_repeat, run_efflux, pumps_binary] + empty_vals
+    fields_expected_outgoing = evolver_conf['experimental_params'][param]['fields_expected_outgoing']
+    fields_expected_incoming = evolver_conf['experimental_params'][param]['fields_expected_incoming']
+    if len(output) is not fields_expected_outgoing:
+        raise EvolverSerialError('Error: Number of fields outgoing for ' + param + ' different from expected\n\tExpected: ' + str(fields_expected_outgoing) + '\n\tFound: ' + str(len(output)))
 
-    return pump_cmd
+    # Construct the actual string and write out on the serial buffer
+    serial_output = param + ','.join(output) + ',' + evolver_conf['serial_end_outgoing']
+    print(serial_output)
+    serial_connection.write(bytes(serial_output, 'UTF-8'))
 
-def get_pump_stop_command():
-    empty_vals = [0] * 17
-    pump_cmd = ['o'] + empty_vals
-    return pump_cmd
+    # Read and process the response
+    response = serial_connection.readline().decode('UTF-8')
+    print(response, flush = True)
+    address = response[0:len(param)]
+    if address != param:
+        raise EvolverSerialError('Error: Response has incorrect address.\n\tExpected: ' + param + '\n\tFound:' + address)
+    if response.find(evolver_conf['serial_end_incoming']) != len(response) - len(evolver_conf['serial_end_incoming']):
+        raise EvolverSerialError('Error: Response did not have valid serial communication termination string!\n\tExpected: ' +  evolver_conf['serial_end_incoming'] + '\n\tFound: ' + response[len(response) - 3:])
 
-def remove_duplicate_commands(command_queue):
-    commands_seen = set()
-    commands_to_delete = []
+    # Remove the address and ending from the response string and convert to a list
+    returned_data = response[len(param):len(response) - len(evolver_conf['serial_end_incoming']) - 1].split(',')
 
-    # Traverse list in reverse to keep the last sent request by user/code only
-    # Added bonus - don't have to worry about index shifts after deleting since deleting from end to beginning
-    for i, command in enumerate(reversed(command_queue)):
-       for key, value in command.items():
-            if key == 'pump':
-                command_check = str(value)
-            else:
-                command_check = key
-            if command_check in commands_seen:
-                # store index for non-revered list
-                commands_to_delete.append(len(command_queue) - 1 - i)
-            commands_seen.add(command_check)
+    if len(returned_data) != fields_expected_incoming:
+        raise EvolverSerialError('Error: Number of fields recieved for ' + param + ' different from expected\n\tExpected: ' + str(fields_expected_incoming) + '\n\tFound: ' + str(len(returned_data)))
 
-    for command_index in commands_to_delete:
-        del command_queue[command_index]
+    if returned_data[0] == evolver_conf['echo_response_char'] and output[1:] != returned_data[1:]:
+        raise EvolverSerialError('Error: Value returned by echo different from values sent.\n\tExpected:' + str(output[1:]) + '\n\tFound: ' + str(value))
+    elif returned_data[0] != evolver_conf['data_response_char'] and returned_data[0] != evolver_conf['echo_response_char']:
+        raise EvolverSerialError('Error: Incorect response character.\n\tExpected: ' + evolver_conf['data_response_char'] + '\n\tFound: ' + returned_data[0])
 
-    return command_queue
+    # ACKNOWLEDGE - lets arduino know it's ok to run any commands (super important!)
+    serial_output = param + evolver_conf['acknowledge_char'] + ',' + evolver_conf['serial_end_outgoing']
+    print(serial_output, flush = True)
+    serial_connection.write(bytes(serial_output, 'UTF-8'))
 
-def config_to_arduino(key, key_list, header, ending, method):
-    global SERIAL
-    output = ''
-    if method == 'all' and key_list is not None:
-        output = header + ','.join(map(str,key_list)) + ', ' + ending
-        print('Output to arduino:', flush = True)
-        print(output, flush = True)
-        SERIAL.write(bytes(output, 'UTF-8'))
-
-    if method == 'indiv' and key_list is not None:
-        for x in key_list.split(','):
-            output = header + x + ending
-            SERIAL.write(bytes(output,'UTF-8'))
-
-def data_from_arduino(key, header, ending):
-    global SERIAL
-    data_list = None
-    if not SERIAL.isOpen():
-        return
-    received = SERIAL.readline().decode('UTF-8')
-    print('Received from arduino:', flush = True)
-    print(received, flush = True)
-    if received[0:4] == header and received[-3:] == ending:
-        data_list = [int(s) for s in received[4:-4].split(',')]
-        return data_list
+    if returned_data[0] == evolver_conf['data_response_char']:
+        returned_data = returned_data[1:]
     else:
-        print('Data from arduino misconfigured', flush = True)
-        data_list = 'Data misconfigured'
-        return data_list
+        returned_data = None
 
-def ping_arduino(config):
-    global PARAM, ENDING_SEND, ENDING_RETURN, SERIAL
-    data = {}
-    for key, value in config.items():
-        config_to_arduino(key, value, PARAM[key][0], ENDING_SEND, PARAM[key][2])
-        data[key] = data_from_arduino(key, PARAM[key][1], ENDING_RETURN)
-        if data[key] == 'Data misconfigured':
-           data = 'Data misconfigured'
-           return data
-        time.sleep(.5)
-    return data
+    return returned_data
 
-def push_arduino(config):
-    global PARAM, ENDING_SEND, SERIAL
-    for key, value in config.items():
-        if key is not 'push':
-            config_to_arduino(key, value, PARAM[key][0], ENDING_SEND, PARAM[key][2])
-            if key == 'temp':
-                time.sleep(.1)
-                SERIAL.reset_input_buffer()
+def attach(app, conf):
+    """
+        Attach the server to the web application.
+        Initialize server from config
+    """
+    global evolver_conf, serial_connection
 
-def define_parameters(param_json):
-    global PARAM
-    PARAM.clear()
-    PARAM.update(param_json)
-
-def attach(app):
-    global CONFIG, DEFAULT_CONFIG, PARAMS, DEFAULT_PARAMS
-    [os.mkdir(d) for d in LOCATIONS if not os.path.isdir(d)]
     sio.attach(app)
+    evolver_conf = conf
+    # Create directories if they don't exist
+    locations = [os.path.join(LOCATION, evolver_conf['calibrations_directory']),
+                    os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['fitted_data_directory']),
+                    os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['raw_data_directory']),
+                    os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['fitted_data_directory'], evolver_conf['od_calibration_directory']),
+                    os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['fitted_data_directory'], evolver_conf['temp_calibration_directory']),
+                    os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['raw_data_directory'], evolver_conf['od_calibration_directory']),
+                    os.path.join(LOCATION, evolver_conf['calibrations_directory'], evolver_conf['raw_data_directory'], evolver_conf['temp_calibration_directory'])]
+    [os.mkdir(d) for d in locations if not os.path.isdir(d)]
 
-def set_ip(ip):
-    global evolver_ip
-    evolver_ip = ip
+    # Set up the serial comms
+    serial_connection = serial.Serial(port=evolver_conf['serial_port'], baudrate = evolver_conf['serial_baudrate'], timeout = evolver_conf['serial_timeout'])
 
-async def broadcast():
-    global command_queue, commands_running
-    print('Got command from BROADCAST', flush = True)
-    current_time = time.time()
-    config = {'od':[broadcast_od_power] * 16, 'temp':['NaN'] * 16}
-    while commands_running:
-        pass
-    command_queue.append(dict(config))
-    data = run_commands()
-    if data is None:
-        return
-    if 'od' in data and 'temp' in data and 'NaN' not in data.get('od') and 'NaN' not in data.get('temp') and len(data.get('od',[])) > 0 and len(data.get('temp',[])) > 0:
-        print('Broadcasting data:', flush = True)
-        print(data, flush = True)
-        data['ip'] = evolver_ip
-        await sio.emit('databroadcast', data, namespace='/dpu-evolver')
+def get_num_commands():
+    global command_queue
+    return len(command_queue)
+
+async def broadcast(commands_in_queue):
+    global command_queue
+    broadcast_data = {}
+    clear_broadcast()
+    if not commands_in_queue:
+        for param, config in evolver_conf['experimental_params'].items():
+            if config['recurring']:
+                command_queue.append({'param': param, 'value': config['value'], 'type':RECURRING})
+    # Always run commands so that IMMEDIATE requests occur. RECURRING requests only happen if no commands in queue
+    broadcast_data['data'] = run_commands()
+    broadcast_data['config'] = evolver_conf['experimental_params']
+    if not commands_in_queue:
+        print('Broadcasting data', flush = True)
+        print(broadcast_data)
+        broadcast_data['ip'] = evolver_conf['evolver_ip']
+        await sio.emit('broadcast', broadcast_data, namespace='/dpu-evolver')
