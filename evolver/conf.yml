@@ -20,7 +20,7 @@ experimental_params:
     recurring: true
     fields_expected_outgoing: 17
     fields_expected_incoming: 17
-    value: ['30', '30', '30', '30', '30', '30', '30', '30', '30', '30', '30', '30', '30', '30', '30', '30']
+    value: ['4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095']
   stir:
     recurring: true
     fields_expected_outgoing: 17
@@ -56,7 +56,7 @@ serial_end_outgoing: "_!"
 serial_end_incoming: end
 serial_port: '/dev/ttyAMA0'
 serial_baudrate: 9600
-serial_timeout: 0.15
+serial_timeout: 0.3
 
 recurring_command_char: r
 immediate_command_char: i

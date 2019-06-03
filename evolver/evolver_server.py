@@ -251,6 +251,8 @@ def run_commands():
     return data
 
 def serial_communication(param, value, comm_type):
+    serial_connection.reset_input_buffer()
+    serial_connection.reset_output_buffer()
     output = []
 
     # Check that parameters being sent to arduino match expected values
@@ -295,7 +297,9 @@ def serial_communication(param, value, comm_type):
         raise EvolverSerialError('Error: Incorect response character.\n\tExpected: ' + evolver_conf['data_response_char'] + '\n\tFound: ' + returned_data[0])
 
     # ACKNOWLEDGE - lets arduino know it's ok to run any commands (super important!)
-    serial_output = param + evolver_conf['acknowledge_char'] + ',' + evolver_conf['serial_end_outgoing']
+    serial_output = [''] * fields_expected_outgoing
+    serial_output[0] = evolver_conf['acknowledge_char']
+    serial_output = param + ','.join(serial_output) + ',' + evolver_conf['serial_end_outgoing']
     print(serial_output, flush = True)
     serial_connection.write(bytes(serial_output, 'UTF-8'))
 
