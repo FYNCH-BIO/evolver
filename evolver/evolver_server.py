@@ -4,6 +4,7 @@ import evolver
 import time
 import asyncio
 import json
+import sys
 import os
 import yaml
 from traceback import print_exc
@@ -246,8 +247,7 @@ def run_commands():
             if returned_data is not None:
                 data[command['param']] = returned_data
         except (TypeError, ValueError, serial.serialutil.SerialException, EvolverSerialError) as e:
-            print(str(e.__class__.__name__), flush = True)
-            print_exc()
+            print_exc(file = sys.stdout)
     return data
 
 def serial_communication(param, value, comm_type):
