@@ -303,6 +303,9 @@ def serial_communication(param, value, comm_type):
     print(serial_output, flush = True)
     serial_connection.write(bytes(serial_output, 'UTF-8'))
 
+    # This is necessary to allow the ack to be fully written out to samd21 and for them to fully read
+    time.sleep(.05)
+
     if returned_data[0] == evolver_conf['data_response_char']:
         returned_data = returned_data[1:]
     else:
