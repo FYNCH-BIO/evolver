@@ -277,7 +277,7 @@ def serial_communication(param, value, comm_type):
     serial_connection.write(bytes(serial_output, 'UTF-8'))
 
     # Read and process the response
-    response = serial_connection.readline().decode('UTF-8')
+    response = serial_connection.readline().decode('UTF-8', errors='ignore')
     print(response, flush = True)
     address = response[0:len(param)]
     if address != param:
