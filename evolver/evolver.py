@@ -38,14 +38,14 @@ if __name__ == '__main__':
     last_time = None
     running = False
     while True:
-        current_time = time.time()
-        commands_in_queue = evolver_server.get_num_commands() > 0
+        try:
+            current_time = time.time()
+            commands_in_queue = evolver_server.get_num_commands() > 0
 
-        if (last_time is None or current_time - last_time > conf['broadcast_timing'] or commands_in_queue) and not running:
-            last_time = current_time
-            try:
+            if (last_time is None or current_time - last_time > conf['broadcast_timing'] or commands_in_queue) and not running:
+                last_time = current_time
                 running = True
                 bloop.run_until_complete(evolver_server.broadcast(commands_in_queue))
                 running = False
-            except:
-                pass
+        except:
+            pass
