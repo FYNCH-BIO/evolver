@@ -64,6 +64,7 @@ async def on_command(sid, data):
     if immediate:
         clear_broadcast(param)
         command_queue.insert(0, {'param': param, 'value': value, 'type': IMMEDIATE})
+    await sio.emit('commandbroadcast', data, namespace = '/dpu-evolver')
 
 @sio.on('getconfig', namespace = '/dpu-evolver')
 async def on_getlastcommands(sid, data):
