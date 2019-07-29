@@ -42,7 +42,13 @@ async def on_command(sid, data):
 
     # Update the configuration for the param
     # TODO - make parameters generalized
-    evolver_conf['experimental_params'][param]['value'] = value
+    if value is not None:
+        if type(value) is list:
+            for i, v in enumerate(value):
+                if v != 'NaN':
+                    evolver_conf['experimental_params'][param]['value'][i] = value[i]
+        else:
+            evolver_conf['experimental_params'][param]['value'] = value
     if recurring is not None:
         evolver_conf['experimental_params'][param]['recurring'] = recurring
     if fields_expected_outgoing is not None:
@@ -263,6 +269,10 @@ def serial_communication(param, value, comm_type):
 
     if type(value) is list:
        output = output + list(map(str,value))
+       for i,command_value in enumerate(output):
+            if command_value == 'NaN':
+                output[i] = evolver_conf['experimental_params'][param]['value'][i]
+
     else:
         output.append(value)
 
