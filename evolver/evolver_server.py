@@ -63,7 +63,7 @@ async def on_command(sid, data):
 
     if immediate:
         clear_broadcast(param)
-        command_queue.insert(0, {'param': param, 'value': evolver_conf['experimental_params'][param]['value'][i], 'type': IMMEDIATE})
+        command_queue.insert(0, {'param': param, 'value': evolver_conf['experimental_params'][param]['value'], 'type': IMMEDIATE})
     await sio.emit('commandbroadcast', data, namespace = '/dpu-evolver')
 
 @sio.on('getconfig', namespace = '/dpu-evolver')
