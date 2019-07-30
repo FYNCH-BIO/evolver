@@ -363,6 +363,7 @@ async def broadcast(commands_in_queue):
     broadcast_data['config'] = evolver_conf['experimental_params']
     if not commands_in_queue:
         print('Broadcasting data', flush = True)
-        print(broadcast_data)
         broadcast_data['ip'] = evolver_conf['evolver_ip']
+        broadcast_data['timestamp'] = time.time()
+        print(broadcast_data, flush = True)
         await sio.emit('broadcast', broadcast_data, namespace='/dpu-evolver')
