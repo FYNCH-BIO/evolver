@@ -43,7 +43,7 @@ async def on_command(sid, data):
     # Update the configuration for the param
     # TODO - make parameters generalized
     if value is not None:
-        if type(value) is list:
+        if type(value) is list and evolver_conf['experimental_params'][param]['value'] is not None:
             for i, v in enumerate(value):
                 if v != 'NaN':
                     evolver_conf['experimental_params'][param]['value'][i] = value[i]
