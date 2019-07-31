@@ -42,7 +42,8 @@ if __name__ == '__main__':
         commands_in_queue = evolver_server.get_num_commands() > 0
 
         if (last_time is None or current_time - last_time > conf['broadcast_timing'] or commands_in_queue) and not running:
-            last_time = current_time
+            if last_time is None or current_time - last_time > conf['broadcast_timing']:
+                last_time = current_time
             try:
                 running = True
                 bloop.run_until_complete(evolver_server.broadcast(commands_in_queue))
