@@ -1,0 +1,25 @@
+[
+    {
+        "name": "string",
+        "measuredData":[[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]],
+        "calibrationType": "string",
+        "raw": [
+            {
+                "param":"string",
+                "vialData": [[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]],
+                "timeCollected": "number",
+                "name": "string"
+            }
+        ],
+        "fits": [
+            {
+                "name": "string",
+                "coefficients": [[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]],
+                "type": "string",
+                "timeFit": "number",
+                "active": "boolean",
+                "params": []
+            }
+        ]
+    }
+]
