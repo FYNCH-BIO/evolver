@@ -286,6 +286,7 @@ def serial_communication(param, value, comm_type):
     serial_output = param + ','.join(output) + ',' + evolver_conf['serial_end_outgoing']
     print(serial_output)
     serial_connection.write(bytes(serial_output, 'UTF-8'))
+    time.sleep(.05)
 
     # Read and process the response
     response = serial_connection.readline().decode('UTF-8', errors='ignore')
