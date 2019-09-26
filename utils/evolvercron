@@ -1,0 +1,1 @@
+*/5 * * * * /bin/bash /home/pi/evolver/server_monitor.sh >> /home/pi/evolver/server_monitor.log
