@@ -244,6 +244,7 @@ def run_commands():
                 data[command['param']] = returned_data
         except (TypeError, ValueError, serial.serialutil.SerialException, EvolverSerialError) as e:
             print_exc(file = sys.stdout)
+            await sio.emit('serialexception', command, namespace = '/dpu-evolver')
     return data
 
 def serial_communication(param, value, comm_type):
