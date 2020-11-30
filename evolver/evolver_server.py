@@ -233,7 +233,7 @@ def clear_broadcast(param=None):
             command_queue.pop(i)
             break
 
-def run_commands():
+async def run_commands():
     global command_queue, serial_connection
     data = {}
     while len(command_queue) > 0:
