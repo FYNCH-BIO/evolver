@@ -341,7 +341,7 @@ async def broadcast(commands_in_queue):
             if config['recurring']:
                 command_queue.append({'param': param, 'value': config['value'], 'type':RECURRING})
     # Always run commands so that IMMEDIATE requests occur. RECURRING requests only happen if no commands in queue
-    broadcast_data['data'] = run_commands()
+    broadcast_data['data'] = await run_commands()
     broadcast_data['config'] = evolver_conf['experimental_params']
     if not commands_in_queue:
         print('Broadcasting data', flush = True)
