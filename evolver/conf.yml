@@ -1,65 +1,76 @@
----
-# eVOLVER experimental parameter configurations
-experimental_params:
-  od_90:
-    recurring: true
-    fields_expected_outgoing: 2
-    fields_expected_incoming: 17
-    value: '1000'
-  od_135:
-    recurring: true
-    fields_expected_outgoing: 2
-    fields_expected_incoming: 17
-    value: '1000'
-  od_led:
-    recurring: true
-    fields_expected_outgoing: 17
-    fields_expected_incoming: 17
-    value: ['4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095']
-  temp:
-    recurring: true
-    fields_expected_outgoing: 17
-    fields_expected_incoming: 17
-    value: ['4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095']
-  stir:
-    recurring: true
-    fields_expected_outgoing: 17
-    fields_expected_incoming: 17
-    value: ['8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8']
-  pump:
-    recurring: false
-    fields_expected_outgoing: 49
-    fields_expected_incoming: 49
-    value: null
-  lxml:
-    recurring: false
-    fields_expected_outgoing: 17
-    fields_expected_incoming: 17
-    value: ['4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095']
-
-# eVOLVER server parameter configurations
-broadcast_timing: 20
-num_sleeves: 16
-port: 8081
-
-# RPi file locations and names
-device: evolver-config.json
+acknowledge_char: a
+broadcast_timing: 90
 calibration: calibration.json
 calibrations_directory: calibrations
-fitted_data_directory: fittedCal
-raw_data_directory: rawCal
-od_calibration_directory: od
-temp_calibration_directory: temp
-
-# Serial communication
-serial_end_outgoing: "_!"
-serial_end_incoming: end
-serial_port: '/dev/ttyAMA0'
-serial_baudrate: 9600
-serial_timeout: 0.3
-
-recurring_command_char: r
-immediate_command_char: i
-echo_response_char: e
 data_response_char: b
-acknowledge_char: a
+device: evolver-config.json
+echo_response_char: e
+evolver_ip: 192.168.1.9
+experimental_params:
+  lux: 
+    fields_expected_incoming: 33
+    fields_expected_outgoing: 2
+    recurring: true
+    value: '4'
+  lxml:
+    fields_expected_incoming: 17
+    fields_expected_outgoing: 17
+    recurring: false
+    value: ['4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095',
+      '4095', '4095', '4095', '4095', '4095', '4095', '4095']
+  od_led:
+    fields_expected_incoming: 17
+    fields_expected_outgoing: 17
+    recurring: false
+    value: ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0',
+      '0', '0']
+  od_90:
+    fields_expected_incoming: 17
+    fields_expected_outgoing: 2
+    pre:
+    - {param: od_led, value: values}
+    - {param: wait, value: 15}
+    post:
+    - {param: od_led, value: ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0',
+      '0', '0']}
+    - {param: wait, value: 15}
+    recurring: true
+    value: '1000'
+  pres:
+    fields_expected_incoming: 9
+    fields_expected_outgoing: 9
+    recurring: true
+    value: ['0', '0', '0', '0', '0', '0', '0', '0']
+  pump:
+    fields_expected_incoming: 49
+    fields_expected_outgoing: 49
+    recurring: false
+    value: ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0',
+      '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0',
+      '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0',
+      '0', '0']
+  stir:
+    fields_expected_incoming: 17
+    fields_expected_outgoing: 17
+    recurring: true
+    value: ['10', '10', '10', '10', '10', '10', '10', '10', '10', '10', '10', '10',
+      '10', '10', '10', '10']
+  temp:
+    fields_expected_incoming: 17
+    fields_expected_outgoing: 17
+    recurring: true
+    value: ['1602', '1605', '1605', '1612', '1594', '1611', '1593', '1592', '1595',
+      '1598', '1742', '1587', '1594', '1612', '1591', '1603']
+fitted_data_directory: fittedCal
+immediate_command_char: i
+num_sleeves: 16
+od_calibration_directory: od
+port: 8081
+raw_data_directory: rawCal
+recurring_command_char: r
+serial_baudrate: 9600
+serial_end_incoming: end
+serial_end_outgoing: _!
+serial_port: /dev/ttyAMA0
+serial_timeout: 0.5
+temp_calibration_directory: temp

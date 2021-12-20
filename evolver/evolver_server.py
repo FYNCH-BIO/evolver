@@ -239,6 +239,9 @@ async def run_commands():
     while len(command_queue) > 0:
         command = command_queue.pop(0)
         try:
+            if command['param']=='wait':
+                time.sleep(command['value'])
+                continue
             returned_data = serial_communication(command['param'], command['value'], command['type'])
             if returned_data is not None:
                 data[command['param']] = returned_data
@@ -276,7 +279,7 @@ def serial_communication(param, value, comm_type):
     serial_output = param + ','.join(output) + ',' + evolver_conf['serial_end_outgoing']
     print(serial_output)
     serial_connection.write(bytes(serial_output, 'UTF-8'))
-    time.sleep(.05)
+    time.sleep(.5)
 
     # Read and process the response
     response = serial_connection.readline().decode('UTF-8', errors='ignore')
@@ -306,7 +309,7 @@ def serial_communication(param, value, comm_type):
     serial_connection.write(bytes(serial_output, 'UTF-8'))
 
     # This is necessary to allow the ack to be fully written out to samd21 and for them to fully read
-    time.sleep(.05)
+    time.sleep(.5)
 
     if returned_data[0] == evolver_conf['data_response_char']:
         returned_data = returned_data[1:]
@@ -332,14 +335,39 @@ def get_num_commands():
     global command_queue
     return len(command_queue)
 
+def process_commands(commands_in_queue,parameters):
+    """
+        Add all recommands and pre/post commands to the command queue
+    """
+    for param, config in parameters.items():
+        if config['recurring']:
+            if "pre" in config: # run this command prior to the main command
+                sub_command(config['pre'],parameters)
+
+            # Main command
+            command_queue.append({'param': param, 'value': config['value'], 'type':RECURRING})
+
+            if "post" in config: # run this command after the main command
+                sub_command(config['post'],parameters)
+
+def sub_command(command_list,parameters):
+    """
+        Run a seperate list of commands called for by the main parameter command
+    """
+    for command in command_list:
+        parameter = command['param']
+        value = command['value']
+        if value == 'values':
+            value = parameters[parameter]['value']
+        command_queue.append({'param': parameter, 'value': value, 'type':IMMEDIATE})
+
 async def broadcast(commands_in_queue):
     global command_queue
     broadcast_data = {}
     clear_broadcast()
     if not commands_in_queue:
-        for param, config in evolver_conf['experimental_params'].items():
-            if config['recurring']:
-                command_queue.append({'param': param, 'value': config['value'], 'type':RECURRING})
+        process_commands(commands_in_queue,evolver_conf['experimental_params'])
+
     # Always run commands so that IMMEDIATE requests occur. RECURRING requests only happen if no commands in queue
     broadcast_data['data'] = await run_commands()
     broadcast_data['config'] = evolver_conf['experimental_params']
