@@ -262,7 +262,7 @@ def serial_communication(param, value, comm_type):
        output = output + list(map(str,value))
        for i,command_value in enumerate(output):
             if command_value == 'NaN':
-                output[i] = evolver_conf['experimental_params'][param]['value'][i]
+                output[i] = evolver_conf['experimental_params'][param]['value'][i-1]
 
     else:
         output.append(value)
