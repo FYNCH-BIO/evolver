@@ -247,7 +247,6 @@ async def run_commands():
                 data[command['param']] = returned_data
         except (TypeError, ValueError, serial.serialutil.SerialException, EvolverSerialError) as e:
             print_exc(file = sys.stdout)
-            await sio.emit('serialexception', command, namespace = '/dpu-evolver')
     return data
 
 def serial_communication(param, value, comm_type):
@@ -265,7 +264,7 @@ def serial_communication(param, value, comm_type):
        output = output + list(map(str,value))
        for i,command_value in enumerate(output):
             if command_value == 'NaN':
-                output[i] = evolver_conf['experimental_params'][param]['value'][i]
+                output[i] = evolver_conf['experimental_params'][param]['value'][i-1]
 
     else:
         output.append(value)
@@ -279,7 +278,7 @@ def serial_communication(param, value, comm_type):
     serial_output = param + ','.join(output) + ',' + evolver_conf['serial_end_outgoing']
     print(serial_output)
     serial_connection.write(bytes(serial_output, 'UTF-8'))
-    time.sleep(.05)
+    time.sleep(evolver_conf['serial_delay'])
 
     # Read and process the response
     response = serial_connection.readline().decode('UTF-8', errors='ignore')
@@ -309,7 +308,7 @@ def serial_communication(param, value, comm_type):
     serial_connection.write(bytes(serial_output, 'UTF-8'))
 
     # This is necessary to allow the ack to be fully written out to samd21 and for them to fully read
-    time.sleep(.05)
+    time.sleep(evolver_conf['serial_delay'])
 
     if returned_data[0] == evolver_conf['data_response_char']:
         returned_data = returned_data[1:]
