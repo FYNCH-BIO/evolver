@@ -1,5 +1,6 @@
 import socketio
 import serial
+import serial.tools.list_ports as list_ports
 import evolver
 import time
 import asyncio
@@ -17,6 +18,7 @@ CALIBRATIONS_FILENAME = "calibrations.json"
 evolver_conf = {}
 serial_connection = None
 command_queue = []
+
 sio = socketio.AsyncServer(async_handlers=True)
 
 class EvolverSerialError(Exception):
@@ -282,6 +284,7 @@ def serial_communication(param, value, comm_type):
 
     # Read and process the response
     response = serial_connection.readline().decode('UTF-8', errors='ignore')
+    response = response.strip()
     print(response, flush = True)
     address = response[0:len(param)]
     if address != param:
@@ -328,7 +331,28 @@ def attach(app, conf):
     evolver_conf = conf
 
     # Set up the serial comms
-    serial_connection = serial.Serial(port=evolver_conf['serial_port'], baudrate = evolver_conf['serial_baudrate'], timeout = evolver_conf['serial_timeout'])
+    try:
+        serial_connection = serial.Serial(port=evolver_conf['serial_port'], baudrate = evolver_conf['serial_baudrate'], timeout = evolver_conf['serial_timeout'])
+    except:
+        ports = list(list_ports.grep('SAMD21'))
+        print('\nError:: \'serial_port\' for min_eVOLVER indicated in conf.yml file not correct\n')
+        print('Connected min_eVOLVER Boards:')
+        
+        # port_dict = {} # number : port
+
+        for i,p in enumerate(ports):
+            p = str(p).split(" ")[0]
+            print(f'#{i}    |  {p}')
+            # port_dict[i] = p
+        print('')
+        # board_num = input('Input Board # to Connect to: ')
+        # try:
+            # board_num = int(board_num)
+        # except:
+            # print("Input an integer")
+        # print(f'Connecting to Board #{board_num} : {port_dict[board_num]}')
+        # evolver_conf['serial_port'] = port_dict[board_num]
+
 
 def get_num_commands():
     global command_queue
@@ -373,7 +397,10 @@ async def broadcast(commands_in_queue):
     broadcast_data['config'] = evolver_conf['experimental_params']
     if not commands_in_queue:
         print('Broadcasting data', flush = True)
-        broadcast_data['ip'] = evolver_conf['evolver_ip']
         broadcast_data['timestamp'] = time.time()
         print(broadcast_data, flush = True)
         await sio.emit('broadcast', broadcast_data, namespace='/dpu-evolver')
+
+if __name__ == '__main__':
+    print('Please run evolver.py instead')
+    logger.info('Please run evolver.py instead')
