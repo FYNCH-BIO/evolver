@@ -1,66 +1,60 @@
----
-# eVOLVER experimental parameter configurations
-experimental_params:
-  od_90:
-    recurring: true
-    fields_expected_outgoing: 2
-    fields_expected_incoming: 17
-    value: '1000'
-  od_135:
-    recurring: true
-    fields_expected_outgoing: 2
-    fields_expected_incoming: 17
-    value: '1000'
-  od_led:
-    recurring: true
-    fields_expected_outgoing: 17
-    fields_expected_incoming: 17
-    value: ['4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095']
-  temp:
-    recurring: true
-    fields_expected_outgoing: 17
-    fields_expected_incoming: 17
-    value: ['4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095', '4095']
-  stir:
-    recurring: true
-    fields_expected_outgoing: 17
-    fields_expected_incoming: 17
-    value: ['8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8']
-  pump:
-    recurring: false
-    fields_expected_outgoing: 49
-    fields_expected_incoming: 49
-    value: null
-  lxml:
-    recurring: false
-    fields_expected_outgoing: 17
-    fields_expected_incoming: 17
-    value: ['4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095','4095']
-
-# eVOLVER server parameter configurations
+acknowledge_char: a
 broadcast_timing: 20
-num_sleeves: 16
-port: 8081
-
-# RPi file locations and names
-device: evolver-config.json
 calibration: calibration.json
 calibrations_directory: calibrations
-fitted_data_directory: fittedCal
-raw_data_directory: rawCal
-od_calibration_directory: od
-temp_calibration_directory: temp
-
-# Serial communication
-serial_end_outgoing: "_!"
-serial_end_incoming: end
-serial_port: '/dev/ttyAMA0'
-serial_baudrate: 9600
-serial_timeout: 1
-serial_delay: .1
-
-recurring_command_char: r
-immediate_command_char: i
-echo_response_char: e
 data_response_char: b
-acknowledge_char: a
+device: evolver-config.json
+echo_response_char: e
+evolver_ip: 10.239.141.42
+experimental_params:
+  od_90:
+    fields_expected_incoming: 3
+    fields_expected_outgoing: 2
+    recurring: true
+    value: '500'
+  od_led:
+    fields_expected_incoming: 3
+    fields_expected_outgoing: 3
+    recurring: true
+    value:
+    - 4095
+    - 4095
+  pump:
+    fields_expected_incoming: 7
+    fields_expected_outgoing: 7
+    recurring: false
+    value:
+    - 30
+    - 30
+    - 30
+    - 30
+    - 30
+    - 30
+  stir:
+    fields_expected_incoming: 3
+    fields_expected_outgoing: 3
+    recurring: true
+    value:
+    - 11
+    - 11
+  temp:
+    fields_expected_incoming: 3
+    fields_expected_outgoing: 3
+    recurring: true
+    value:
+    - 25000
+    - 25000
+fitted_data_directory: fittedCal
+immediate_command_char: i
+num_sleeves: 2
+od_calibration_directory: od
+port: 5555
+raw_data_directory: rawCal
+recurring_command_char: r
+serial_baudrate: 9600
+serial_delay: 0.5
+serial_end_incoming: end
+serial_end_outgoing: _!
+serial_port: /dev/cu.usbmodem11101
+serial_timeout: 1
+temp_calibration_directory: temp

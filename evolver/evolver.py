@@ -10,6 +10,7 @@ import os
 
 conf = {}
 CONF_FILENAME = 'conf.yml'
+CONF_PATH = os.path.realpath(os.path.join(os.getcwd(),os.path.dirname(__file__), CONF_FILENAME))
 
 def start_background_loop(loop):
     asyncio.set_event_loop(loop)
@@ -17,14 +18,9 @@ def start_background_loop(loop):
 
 if __name__ == '__main__':
     # need to get our IP
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect(("8.8.8.8", 80))
-    evolver_ip = s.getsockname()[0]
-    s.close()
-    with open(os.path.realpath(os.path.join(os.getcwd(),os.path.dirname(__file__), CONF_FILENAME)), 'r') as ymlfile:
-        conf = yaml.load(ymlfile)
+    with open(CONF_PATH, 'r') as ymlfile:
+        conf = yaml.safe_load(ymlfile)
 
-    conf['evolver_ip'] = evolver_ip
 
     # Set up the server
     server_loop = asyncio.new_event_loop()
