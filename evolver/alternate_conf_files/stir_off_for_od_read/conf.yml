@@ -6,6 +6,16 @@ experimental_params:
     fields_expected_outgoing: 2
     recurring: true
     value: '500'
+    pre:
+    - param: 'stir'
+      value:
+      - 0
+      - 0
+    - param: 'wait'
+      value: 15
+    post:
+    - param: 'stir'
+      value: 'values'
   od_led:
     fields_expected_incoming: 3
     fields_expected_outgoing: 3

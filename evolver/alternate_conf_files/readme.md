@@ -13,7 +13,7 @@ subcommand = a command added to the command queue when another command is run
 An example subcommand:
 ```
 - param: 'od_led'
-  value: ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
+  value: ['0', '0']
 ```
 
 'pre' or 'post' command = a list of subcommands to be added to the command queue before or after the main parameter command
