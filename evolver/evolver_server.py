@@ -330,21 +330,23 @@ def attach(app, conf):
     sio.attach(app)
     evolver_conf = conf
 
+    print('Connected min_eVOLVER Boards:')
+    
+    ports = list(list_ports.grep('SAMD21'))
+
+    for i,p in enumerate(ports):
+        p = str(p).split(" ")[0]
+        print(f'#{i}    |  {p}')
+        # port_dict[i] = p
+    print('')
+    print('Connecting to:', evolver_conf['serial_port'])
+    
     # Set up the serial comms
     try:
         serial_connection = serial.Serial(port=evolver_conf['serial_port'], baudrate = evolver_conf['serial_baudrate'], timeout = evolver_conf['serial_timeout'])
     except:
-        ports = list(list_ports.grep('SAMD21'))
         print('\nError:: \'serial_port\' for min_eVOLVER indicated in conf.yml file not correct\n')
-        print('Connected min_eVOLVER Boards:')
         
-        # port_dict = {} # number : port
-
-        for i,p in enumerate(ports):
-            p = str(p).split(" ")[0]
-            print(f'#{i}    |  {p}')
-            # port_dict[i] = p
-        print('')
         # board_num = input('Input Board # to Connect to: ')
         # try:
             # board_num = int(board_num)
