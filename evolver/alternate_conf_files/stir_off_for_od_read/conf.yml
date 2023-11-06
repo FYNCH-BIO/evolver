@@ -26,7 +26,7 @@ experimental_params:
   stir:
     fields_expected_incoming: 3
     fields_expected_outgoing: 3
-    recurring: true
+    recurring: false
     value:
     - 11
     - 11
@@ -50,7 +50,7 @@ experimental_params:
     - 0
 
 # eVOLVER server parameter configurations
-broadcast_timing: 20
+broadcast_timing: 50
 num_sleeves: 2
 port: 5555
 
