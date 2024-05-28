@@ -64,7 +64,8 @@ serial_end_outgoing: "_!"
 serial_end_incoming: end
 serial_port: '/dev/ttyAMA0'
 serial_baudrate: 9600
-serial_timeout: 0.3
+serial_timeout: 1
+serial_delay: .1
 
 recurring_command_char: r
 immediate_command_char: i
